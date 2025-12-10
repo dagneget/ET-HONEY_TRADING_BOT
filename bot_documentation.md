@@ -18,15 +18,19 @@ The bot currently supports the following features, primarily managed through `bo
 - **Flow**: Collects `PRODUCT_NAME`, `QUANTITY`, `DELIVERY_ADDRESS`, and `PAYMENT_TYPE`.
 - **Admin Notification**: Admins are notified of new orders and can approve/reject them.
 
-### 3. Feedback Submission
+### 3. Product Display with Images
+- **Feature**: When products are displayed to users, they now include images that were inserted by the admin, enhancing the user's browsing experience.
+
+### 4. Feedback Submission
 - **Commands/Entry Points**: `/feedback`, CallbackQueryHandler for `feedback` pattern.
 - **Flow**: Allows users to submit `RATING`, `COMMENT`, and optionally a `PHOTO`.
 - **Admin Approval**: Feedback can be approved by admins.
 
 ### 4. Support/Ticket System (Complaint/Inquiry)
 - **Commands/Entry Points**: `/complaint`, `/inquiry`, CallbackQueryHandler for `Inquiry` or `Complaint` patterns.
-- **Flow**: Users can create tickets by providing a `TICKET_SUBJECT`, `TICKET_MESSAGE`, and optionally a `TICKET_ATTACHMENT` (photo or document).
-- **Admin Interaction**: Admins can view tickets and reply to users. Users can also reply to admin messages, continuing the conversation.
+- **Simplified Flow**: Users can directly submit their complaint or inquiry message without needing to provide a subject. The bot automatically categorizes the request.
+- **Admin Interaction**: Admins can view tickets, including the user's profile information for identification, and reply to users. Users can also reply to admin messages, continuing the conversation.
+- **Ticket History**: Users can view their past tickets and the conversation history with admins.
 
 ### 5. Account Management
 - **Account Deletion**: 
@@ -34,14 +38,18 @@ The bot currently supports the following features, primarily managed through `bo
   - **Flow**: Prompts user for confirmation before `permanently_delete_customer`.
   - **Irreversible Action**: Emphasizes that deletion is irreversible and removes all associated data.
 
-### 6. Admin Functionality
+### 6. User Profiles
+- **Commands/Entry Points**: `/profile`, CallbackQueryHandler for `profile` pattern.
+- **Feature**: Users can view their registered information, order history (`My Orders`), and ticket history (`My Tickets`) including conversation details.
+
+### 7. Admin Functionality
 - **Commands/Entry Points**: `/admin`, `/setadmin`, `/setuser`, CallbackQueryHandlers for `admin` patterns.
 - **Admin Dashboard**: Provides an `admin_menu` with options like `admin_dashboard_overview`, `admin_view_ticket`, `admin_user_messages`.
 - **User Management**: Admins can `set_admin_by_username` (or `set_admin_status` by Telegram ID) and `set_user` (remove admin status).
 - **Approval/Rejection**: Admins can approve/reject customer registrations, orders, and feedback.
 - **Admin Reply**: Admins can reply to user tickets, and these replies are routed back to the user.
 
-### 7. General Bot Commands
+### 8. General Bot Commands
 - `/start`: Opens the main menu.
 - `/about`: Provides information about the bot (currently a placeholder).
 - `/cancel`: Cancels any ongoing conversation.
@@ -68,32 +76,28 @@ Based on the current structure and common bot requirements, the following featur
     - Implement actual payment processing (e.g., Stripe, PayPal) instead of just `Cash` or `Transfer` options.
     - Provide secure transaction handling and order confirmation.
 
-3.  **User Profiles**: 
-    - Allow users to view and edit their registered information (phone, email, region).
-    - Display order history and feedback submissions.
-
-4.  **Notification System**: 
+3.  **Notification System**: 
     - Proactive notifications for order status updates, new product announcements, or important alerts.
     - Customizable notification preferences for users.
 
-5.  **Multi-language Support**: 
+4.  **Multi-language Support**: 
     - Implement internationalization (i18n) to support multiple languages.
     - Allow users to select their preferred language.
 
-6.  **Advanced Admin Dashboard**: 
+5.  **Advanced Admin Dashboard**: 
     - More comprehensive analytics and reporting for admin activities.
     - Tools for bulk user management or broadcast messages.
     - Dedicated sections for managing product inventory, promotions, and customer support.
 
-7.  **FAQ/Knowledge Base**: 
+6.  **FAQ/Knowledge Base**: 
     - A searchable FAQ section to answer common user questions.
     - Reduce the load on the support ticket system.
 
-8.  **Enhanced Security**: 
+7.  **Enhanced Security**: 
     - Implement more robust authentication mechanisms if needed.
     - Regular security audits and updates.
 
-9.  **Deployment Automation**: 
+8.  **Deployment Automation**: 
     - Scripts or configurations for easier deployment to various hosting environments.
     - Continuous Integration/Continuous Deployment (CI/CD) pipeline setup.
 
