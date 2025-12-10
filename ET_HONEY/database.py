@@ -61,6 +61,14 @@ def init_db():
         c.execute("ALTER TABLE orders ADD COLUMN price REAL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    try:
+        c.execute("ALTER TABLE customers ADD COLUMN language TEXT DEFAULT 'en'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE products ADD COLUMN available_quantities TEXT")
+    except sqlite3.OperationalError:
+        pass
     
     # Messages Table
     c.execute('''
@@ -117,17 +125,24 @@ def init_db():
     conn.commit()
     conn.close()
 
-def add_product(name, description, price, stock, image_path=None):
+def add_product(name, description, price, stock, image_path=None, available_quantities=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO products (name, description, price, stock, image_path)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (name, description, price, stock, image_path))
+        INSERT INTO products (name, description, price, stock, image_path, available_quantities)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (name, description, price, stock, image_path, available_quantities))
     product_id = c.lastrowid
     conn.commit()
     conn.close()
     return product_id
+
+def update_customer_language(telegram_id, language):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('UPDATE customers SET language = ? WHERE telegram_id = ?', (language, telegram_id))
+    conn.commit()
+    conn.close()
 
 def get_all_products():
     conn = sqlite3.connect(DB_PATH)
@@ -224,7 +239,7 @@ def add_customer(data):
     c.execute('''
         INSERT INTO customers (telegram_id, username, full_name, phone, email, region, customer_type, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (data['telegram_id'], data['username'], data['full_name'], data['phone'], data['email'], data['region'], data['customer_type'], 'Pending'))
+    ''', (data['telegram_id'], data['username'], data['full_name'], data['phone'], data['email'], data['region'], data['customer_type'], 'Approved'))
     customer_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -383,15 +398,6 @@ def get_tickets_by_user(user_id):
     tickets = c.fetchall()
     conn.close()
     return tickets
-
-def get_ticket_messages(ticket_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute('SELECT * FROM messages WHERE ticket_id = ? ORDER BY created_at ASC', (ticket_id,))
-    messages = c.fetchall()
-    conn.close()
-    return messages
 
 def get_feedback_by_user(user_id):
     conn = sqlite3.connect(DB_PATH)

@@ -13,11 +13,21 @@ from telegram.ext import (
     Application
 )
 import database
+from languages import get_text
 import re
 import uuid
 
 # Allowed file extensions for uploads
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.pdf', '.doc', '.docx', '.txt'}
+
+# Regex Patterns for Menu Buttons
+REGISTER_PATTERN = r'^(🧍 Register|🧍 ይመዝገቡ)$'
+PROFILE_PATTERN = r'^(👤 Profile|👤 መገለጫ)$'
+ORDER_PATTERN = r'^(🛒 Make Order|🛒 ይዘዙ)$'
+FEEDBACK_PATTERN = r'^(✍️ Feedback|✍️ አስተያየት)$'
+SUPPORT_PATTERN = r'^(📞 Contact Support|📞 ድጋፍ ያግኙ)$'
+ABOUT_PATTERN = r'^(ℹ️ About|ℹ️ ስለ እኛ)$'
+BLOG_PATTERN = r'^(📰 GPBlog)$'
 
 # Load environment variables
 load_dotenv()
@@ -56,7 +66,7 @@ RETURNING_USER_OPTIONS = 60
 ADMIN_REPLY = 70
 
 # States for Adding Product
-ADD_PRODUCT_NAME, ADD_PRODUCT_DESC, ADD_PRODUCT_PRICE, ADD_PRODUCT_STOCK, ADD_PRODUCT_IMAGE = range(80, 85)
+ADD_PRODUCT_NAME, ADD_PRODUCT_DESC, ADD_PRODUCT_PRICE, ADD_PRODUCT_STOCK, ADD_PRODUCT_QUANTITIES, ADD_PRODUCT_IMAGE = range(80, 86)
 
 async def post_init(application: Application):
     """Sets the bot's menu button commands."""
@@ -136,9 +146,11 @@ async def admin_user_messages(update: Update, context: ContextTypes.DEFAULT_TYPE
     message_text = "*✉️ User Messages*\n\n"
     keyboard_buttons = []
     for ticket in tickets:
-        customer = database.get_customer(ticket['user_id'])
-        username = customer['username'] if customer else "Unknown User"
-        message_text += f"ID: {ticket['id']} | User: @{username} | Subject: {ticket['subject']} | Status: {ticket['status']}\n"
+        customer = database.get_customer_by_telegram_id(ticket['user_id'])
+        name = customer['full_name'] if customer else "Unknown User"
+        username = customer['username'] if customer else ""
+        user_display = f"{name} (@{username})" if username else name
+        message_text += f"ID: {ticket['id']} | User: {user_display} | Subject: {ticket['subject']} | Status: {ticket['status']}\n"
         keyboard_buttons.append([InlineKeyboardButton(f"View Ticket {ticket['id']}", callback_data=f'admin_view_ticket:{ticket['id']}')])
 
     filter_keyboard = [
@@ -174,10 +186,12 @@ async def admin_view_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     messages = database.get_messages_for_ticket(ticket_id)
-    customer = database.get_customer(ticket['user_id'])
-    username = customer['username'] if customer else "Unknown User"
+    customer = database.get_customer_by_telegram_id(ticket['user_id'])
+    name = customer['full_name'] if customer else "Unknown User"
+    username = customer['username'] if customer else ""
+    user_display = f"{name} (@{username})" if username else name
 
-    message_text = f"*✉️ Ticket #{ticket_id} with @{username} (Status: {ticket['status']})*\n\n"
+    message_text = f"*✉️ Ticket #{ticket_id} with {user_display} (Status: {ticket['status']})*\n\n"
     for msg in messages:
         message_text += f"*{msg['sender_type'].capitalize()}*: {msg['message']}\n"
 
@@ -191,11 +205,62 @@ async def admin_view_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode='Markdown')
 
-async def admin_reply_to_ticket_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Instructions for replying to a ticket."""
+async def admin_reply_to_ticket_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts the admin reply conversation."""
     query = update.callback_query
     await query.answer()
-    await query.message.reply_text("👉 To reply, please **reply** to the ticket message above with your text.", parse_mode='Markdown')
+    
+    try:
+        ticket_id = int(query.data.split(':')[1])
+    except (IndexError, ValueError):
+        await query.message.reply_text("Invalid ticket ID.")
+        return ConversationHandler.END
+
+    context.user_data['reply_ticket_id'] = ticket_id
+    
+    ticket = database.get_ticket(ticket_id)
+    if not ticket:
+        await query.message.reply_text("Ticket not found.")
+        return ConversationHandler.END
+
+    customer = database.get_customer_by_telegram_id(ticket['user_id'])
+    name = customer['full_name'] if customer else "User"
+
+    await query.message.reply_text(f"📝 Please type your reply for *{name}*:", parse_mode='Markdown')
+    return ADMIN_REPLY
+
+async def admin_receive_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Receives the admin's reply message and sends it to the user."""
+    text = update.message.text
+    ticket_id = context.user_data.get('reply_ticket_id')
+    
+    if not ticket_id:
+        await update.message.reply_text("Session expired. Please select the ticket again.")
+        return ConversationHandler.END
+
+    # Save message to DB
+    database.add_message(ticket_id, 'admin', text)
+    
+    # Update ticket status if needed
+    database.update_ticket_status(ticket_id, 'Open') 
+    
+    # Notify User
+    ticket = database.get_ticket(ticket_id)
+    if ticket:
+        user_id = ticket['user_id'] # Telegram ID
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"👨‍💼 *Support Reply (Ticket #{ticket_id})*:\n\n{text}\n\n_Type a message to reply back._",
+                parse_mode='Markdown'
+            )
+            await update.message.reply_text(f"✅ Reply sent to user.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Reply saved, but failed to send notification: {e}")
+    else:
+        await update.message.reply_text("❌ Ticket not found.")
+        
+    return ConversationHandler.END
 
 async def admin_resolve_ticket_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Resolves/closes a ticket."""
@@ -244,37 +309,75 @@ async def setadmin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     database.set_admin_by_username(target_username)
     await update.message.reply_text(f"User @{target_username} has been temporarily set as admin.")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends a message with an inline keyboard menu."""
+async def choose_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [
-            InlineKeyboardButton("🧍 Register", callback_data='register'),
-            InlineKeyboardButton("� Profile", callback_data='profile'),
-        ],
-        [
-            InlineKeyboardButton("🛒 Make Order", callback_data='order'),
-            InlineKeyboardButton("✍️ Feedback", callback_data='feedback'), 
-        ],
-        [
-            InlineKeyboardButton("� Contact Support", callback_data='contact_support'),
-        ],
-        [
-            InlineKeyboardButton("ℹ️ About", callback_data='about'),
-        ]
+        [InlineKeyboardButton("English 🇬🇧", callback_data='lang_en')],
+        [InlineKeyboardButton("Amharic 🇪🇹", callback_data='lang_am')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    msg = "Please select your language / ቋንቋ ይምረጡ:"
+    if update.callback_query:
+        await update.callback_query.message.reply_text(msg, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(msg, reply_markup=reply_markup)
+
+async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    lang = query.data.split('_')[1]
+    user_id = query.from_user.id
+    
+    context.user_data['language'] = lang
+    
+    # Update DB if user exists
+    customer = database.get_customer_by_telegram_id(user_id)
+    if customer:
+        database.update_customer_language(user_id, lang)
+        
+    await query.message.reply_text(get_text(lang, 'language_set'))
+    await start(update, context)
+
+def get_user_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if 'language' in context.user_data:
+        return context.user_data['language']
+    
+    customer = database.get_customer_by_telegram_id(user_id)
+    if customer and 'language' in customer.keys() and customer['language']:
+        return customer['language']
+    
+    return None
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends a message with a persistent keyboard menu."""
+    lang = get_user_lang(update, context)
+    if not lang:
+        await choose_language(update, context)
+        return
+
+    # Use ReplyKeyboardMarkup for persistent menu (Grid Layout)
+    keyboard = [
+        [get_text(lang, 'register'), get_text(lang, 'profile')],
+        [get_text(lang, 'order'), get_text(lang, 'feedback')],
+        [get_text(lang, 'contact_support'), get_text(lang, 'about')],
+        [get_text(lang, 'blog')]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    welcome_msg = get_text(lang, 'welcome')
     if update.message:
-        await update.message.reply_text('Welcome to ET Honey Trading! Please choose an option:', reply_markup=reply_markup)
+        await update.message.reply_text(welcome_msg, reply_markup=reply_markup)
     elif update.callback_query:
          # When returning from a conversation or other flow
-        await update.callback_query.message.reply_text('Welcome to ET Honey Trading! Please choose an option:', reply_markup=reply_markup)
+        await update.callback_query.message.reply_text(welcome_msg, reply_markup=reply_markup)
 
 async def check_registration_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     customer = database.get_customer_by_telegram_id(user_id)
+    lang = get_user_lang(update, context) or 'en'
 
     if not customer:
-        message = "You need to register first to use this feature. Please use the /register command."
+        message = get_text(lang, 'not_registered')
         if update.callback_query:
             await update.callback_query.answer()
             await update.callback_query.message.reply_text(message)
@@ -282,15 +385,8 @@ async def check_registration_status(update: Update, context: ContextTypes.DEFAUL
             await update.message.reply_text(message)
         return False
     
-    if customer['status'] == 'Pending':
-        message = "Your registration is pending admin approval. Please wait to use this feature."
-        if update.callback_query:
-            await update.callback_query.answer()
-            await update.callback_query.message.reply_text(message)
-        else:
-            await update.message.reply_text(message)
-        return False
-
+    # Pending status allows access now
+    
     if customer['status'] == 'Rejected':
         message = "Your registration was rejected. Please contact support or re-register."
         if update.callback_query:
@@ -301,7 +397,7 @@ async def check_registration_status(update: Update, context: ContextTypes.DEFAUL
         return False
 
     if customer['status'] == 'Deleted':
-        message = "Your account is deleted. Please reactivate or register a new account."
+        message = get_text(lang, 'account_deleted')
         if update.callback_query:
             await update.callback_query.answer()
             await update.callback_query.message.reply_text(message)
@@ -369,12 +465,13 @@ async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await update.message.reply_text(message)
             return ConversationHandler.END
 
+    lang = get_user_lang(update, context) or 'en'
     if update.callback_query:
         query = update.callback_query
         await query.answer()
-        await query.message.reply_text("Let's get you registered! First, please enter your *Full Name*:", parse_mode='Markdown')
+        await query.message.reply_text(get_text(lang, 'register_intro'), parse_mode='Markdown')
     else: # triggered via command
-        await update.message.reply_text("Let's get you registered! First, please enter your *Full Name*:", parse_mode='Markdown')
+        await update.message.reply_text(get_text(lang, 'register_intro'), parse_mode='Markdown')
         
     return FULL_NAME
 
@@ -387,7 +484,8 @@ async def receive_full_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return FULL_NAME
     
     context.user_data['full_name'] = user_input
-    await update.message.reply_text("Great! Now, please enter your *Phone Number*:", parse_mode='Markdown')
+    lang = get_user_lang(update, context) or 'en'
+    await update.message.reply_text(get_text(lang, 'enter_phone'), parse_mode='Markdown')
     return PHONE
 
 async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -399,19 +497,25 @@ async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
          return PHONE
 
     context.user_data['phone'] = user_input
-    await update.message.reply_text("Thanks! Please enter your *Email Address*:", parse_mode='Markdown')
+    lang = get_user_lang(update, context) or 'en'
+    await update.message.reply_text(get_text(lang, 'enter_email'), parse_mode='Markdown')
     return EMAIL
 
 async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Stores email and asks for region."""
     user_input = update.message.text
-    # Validation placeholder
-    if "@" not in user_input:
-        await update.message.reply_text("Please enter a valid email address:")
-        return EMAIL
-
-    context.user_data['email'] = user_input
-    await update.message.reply_text("Please enter your *Region/City*:", parse_mode='Markdown')
+    
+    if user_input.lower() == 'skip':
+        context.user_data['email'] = None
+    else:
+        # Validation placeholder
+        if "@" not in user_input:
+            await update.message.reply_text("Please enter a valid email address or type 'skip':")
+            return EMAIL
+        context.user_data['email'] = user_input
+    
+    lang = get_user_lang(update, context) or 'en'
+    await update.message.reply_text(get_text(lang, 'enter_region'), parse_mode='Markdown')
     return REGION
 
 async def receive_region(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -419,12 +523,13 @@ async def receive_region(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text
     context.user_data['region'] = user_input
     
+    lang = get_user_lang(update, context) or 'en'
     keyboard = [
-        [InlineKeyboardButton("New Customer", callback_data='New'),
-         InlineKeyboardButton("Returning Customer", callback_data='Returning')]
+        [InlineKeyboardButton(get_text(lang, 'new_customer'), callback_data='New'),
+         InlineKeyboardButton(get_text(lang, 'returning_customer'), callback_data='Returning')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Are you a *New* or *Returning* customer?", reply_markup=reply_markup, parse_mode='Markdown')
+    await update.message.reply_text(get_text(lang, 'customer_type_prompt'), reply_markup=reply_markup, parse_mode='Markdown')
     return CUSTOMER_TYPE
 
 async def receive_customer_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -434,8 +539,9 @@ async def receive_customer_type(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data['customer_type'] = query.data
     
     # Summary
+    lang = get_user_lang(update, context) or 'en'
     summary = (
-        f"*Confirm Registration Details:*\n\n"
+        f"{get_text(lang, 'confirm_reg_title')}\n\n"
         f"👤 Name: {context.user_data['full_name']}\n"
         f"📞 Phone: {context.user_data['phone']}\n"
         f"📧 Email: {context.user_data['email']}\n"
@@ -444,8 +550,8 @@ async def receive_customer_type(update: Update, context: ContextTypes.DEFAULT_TY
     )
     
     keyboard = [
-        [InlineKeyboardButton("✅ Confirm", callback_data='confirm'),
-         InlineKeyboardButton("❌ Cancel", callback_data='cancel')]
+        [InlineKeyboardButton(get_text(lang, 'confirm'), callback_data='confirm'),
+         InlineKeyboardButton(get_text(lang, 'cancel'), callback_data='cancel')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.message.reply_text(summary, reply_markup=reply_markup, parse_mode='Markdown')
@@ -472,20 +578,22 @@ async def confirm_registration(update: Update, context: ContextTypes.DEFAULT_TYP
     }
     
     customer_id = database.add_customer(data)
+    lang = get_user_lang(update, context) or 'en'
     
-    await query.message.reply_text("✅ Registration submitted successfully! Pending admin approval.")
+    # Prompt for Order Now or Later
+    keyboard = [
+        [InlineKeyboardButton(get_text(lang, 'order_now'), callback_data='order')],
+        [InlineKeyboardButton(get_text(lang, 'order_later'), callback_data='order_later')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.message.reply_text(get_text(lang, 'reg_success'), reply_markup=reply_markup)
     
-    # Notify Admin
+    # Notify Admin (Informational)
     admin_id = os.getenv("ADMIN_ID")
     if admin_id and admin_id != "your_admin_id_here":
         try:
-            keyboard = [
-                [InlineKeyboardButton("Approve", callback_data=f"admin:approve:customers:{customer_id}"),
-                 InlineKeyboardButton("Reject", callback_data=f"admin:reject:customers:{customer_id}")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
             message = (
-                f"🚨 *New Customer Registration*\n\n"
+                f"ℹ️ *New Customer Registered*\n\n"
                 f"ID: {customer_id}\n"
                 f"Telegram ID: {data['telegram_id']}\n"
                 f"Username: @{data['username']}\n"
@@ -493,13 +601,20 @@ async def confirm_registration(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"Phone: {data['phone']}\n"
                 f"Email: {data['email']}\n"
                 f"Region: {data['region']}\n"
-                f"Type: {data['customer_type']}"
+                f"Type: {data['customer_type']}\n"
+                f"Status: Approved (Auto)"
             )
-            await context.bot.send_message(chat_id=admin_id, text=message, reply_markup=reply_markup, parse_mode='Markdown')
+            await context.bot.send_message(chat_id=admin_id, text=message, parse_mode='Markdown')
         except Exception as e:
             logging.error(f"Failed to send admin notification: {e}")
             
     return ConversationHandler.END
+
+async def order_later_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    lang = get_user_lang(update, context) or 'en'
+    await query.message.reply_text(get_text(lang, 'order_later_msg'))
 
 async def handle_returning_user_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the choice of a returning user with a deleted account."""
@@ -508,8 +623,8 @@ async def handle_returning_user_choice(update: Update, context: ContextTypes.DEF
     user_id = update.effective_user.id
 
     if query.data == 'reactivate_account':
-        database.update_customer_status_by_telegram_id(user_id, 'Pending') # Reactivate as Pending
-        await query.message.reply_text("Your old account has been reactivated and is now 'Pending' admin approval. You will be notified once it's approved.")
+        database.update_customer_status_by_telegram_id(user_id, 'Approved') # Reactivate as Approved
+        await query.message.reply_text("Your old account has been reactivated and is now Approved! You can start ordering.")
 
         # Notify Admin about account reactivation
         admin_id = os.getenv("ADMIN_ID")
@@ -517,18 +632,13 @@ async def handle_returning_user_choice(update: Update, context: ContextTypes.DEF
             try:
                 customer = database.get_customer_by_telegram_id(user_id)
                 if customer:
-                    keyboard = [
-                        [InlineKeyboardButton("Approve", callback_data=f"admin:approve:customers:{customer['id']}"),
-                         InlineKeyboardButton("Reject", callback_data=f"admin:reject:customers:{customer['id']}")]
-                    ]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
                     message = (
-                        f"🚨 *Account Reactivation Request*\n\n"
+                        f"ℹ️ *Account Reactivated*\n\n"
                         f"User: {customer['full_name']} (ID: {user_id})\n"
                         f"Username: @{customer['username']}\n"
-                        f"Status: Pending Reactivation\n"
+                        f"Status: Approved (Auto)\n"
                     )
-                    await context.bot.send_message(chat_id=admin_id, text=message, reply_markup=reply_markup, parse_mode='Markdown')
+                    await context.bot.send_message(chat_id=admin_id, text=message, parse_mode='Markdown')
             except Exception as e:
                 logging.error(f"Failed to send admin notification for account reactivation: {e}")
         return ConversationHandler.END
@@ -596,24 +706,11 @@ async def admin_action_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     action = data[1] # approve or reject
-    # entity = data[2] # customers
+    # entity = data[2] # orders (others removed)
     entity_id = int(data[3])
     
     if action == 'approve':
-        if 'customers' in query.data:
-            database.update_customer_status(entity_id, 'Approved')
-            new_text = query.message.text + "\n\n✅ *APPROVED*"
-            await query.edit_message_text(text=new_text, parse_mode='Markdown', reply_markup=None)
-            
-            # Notify user
-            customer = database.get_customer(entity_id)
-            if customer and customer['telegram_id']:
-                 try:
-                    await context.bot.send_message(chat_id=customer['telegram_id'], text="🎉 Your registration has been approved!")
-                 except Exception as e:
-                    logging.error(f"Could not notify user: {e}")
-        
-        elif 'orders' in query.data:
+        if 'orders' in query.data:
             database.update_order_status(entity_id, 'Approved')
             new_text = query.message.text + "\n\n✅ *ORDER APPROVED*"
             await query.edit_message_text(text=new_text, parse_mode='Markdown', reply_markup=None)
@@ -626,27 +723,8 @@ async def admin_action_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                  except Exception as e:
                     logging.error(f"Could not notify user: {e}")
 
-        elif 'feedback' in query.data:
-            database.update_feedback_status(entity_id, 'Approved')
-            new_text = query.message.text + "\n\n✅ *FEEDBACK APPROVED*"
-            await query.edit_message_text(text=new_text, parse_mode='Markdown', reply_markup=None)
-
     elif action == 'reject':
-        if 'customers' in query.data:
-            database.update_customer_status(entity_id, 'Rejected')
-            new_text = query.message.text + "\n\n❌ *REJECTED*"
-            await query.edit_message_text(text=new_text, parse_mode='Markdown', reply_markup=None)
-
-            # Notify user and permanently delete their account
-            customer = database.get_customer(entity_id)
-            if customer and customer['telegram_id']:
-                try:
-                    database.permanently_delete_customer(customer['telegram_id'])
-                    await context.bot.send_message(chat_id=customer['telegram_id'], text="❌ Your account reactivation request has been rejected. Your old account has been permanently deleted, and you can now register as a new user.")
-                except Exception as e:
-                    logging.error(f"Could not notify user or permanently delete account after rejection: {e}")
-            
-        elif 'orders' in query.data:
+        if 'orders' in query.data:
             database.update_order_status(entity_id, 'Rejected')
             new_text = query.message.text + "\n\n❌ *ORDER REJECTED*"
             await query.edit_message_text(text=new_text, parse_mode='Markdown', reply_markup=None)
@@ -656,24 +734,6 @@ async def admin_action_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             if order and order['user_id']:
                  try:
                     await context.bot.send_message(chat_id=order['user_id'], text=f"❌ Your Order #{entity_id} could not be processed. Please contact support.")
-                 except Exception as e:
-                    logging.error(f"Could not notify user: {e}")
-
-        elif 'feedback' in query.data:
-            database.update_feedback_status(entity_id, 'Rejected')
-            new_text = query.message.text + "\n\n❌ *FEEDBACK REJECTED*"
-            await query.edit_message_text(text=new_text, parse_mode='Markdown', reply_markup=None)
-
-        elif 'tickets' in query.data:
-            database.update_ticket_status(entity_id, 'Rejected')
-            new_text = query.message.text + "\n\n❌ *TICKET REJECTED*"
-            await query.edit_message_text(text=new_text, parse_mode='Markdown', reply_markup=None)
-            
-            # Notify user
-            ticket = database.get_ticket(entity_id)
-            if ticket and ticket['user_id']:
-                 try:
-                    await context.bot.send_message(chat_id=ticket['user_id'], text=f"❌ Your Ticket #{entity_id} has been rejected. Please verify your details.")
                  except Exception as e:
                     logging.error(f"Could not notify user: {e}")
 
@@ -873,11 +933,6 @@ async def confirm_ticket_submission(update: Update, context: ContextTypes.DEFAUL
     admin_id = os.getenv("ADMIN_ID")
     if admin_id and admin_id != "your_admin_id_here":
         try:
-            keyboard = [
-                [InlineKeyboardButton("Approve", callback_data=f"admin:approve:tickets:{ticket_id}"),
-                 InlineKeyboardButton("Reject", callback_data=f"admin:reject:tickets:{ticket_id}")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
             admin_msg = (
                 f"🛠 *New Support Ticket*\n\n"
                 f"Ticket: #{ticket_id}\n"
@@ -886,7 +941,7 @@ async def confirm_ticket_submission(update: Update, context: ContextTypes.DEFAUL
                 f"User: {update.effective_user.full_name} (@{update.effective_user.username or 'NoUsername'}) (ID: {user_id})\n\n"
                 f"{message_text}"
             )
-            await context.bot.send_message(chat_id=admin_id, text=admin_msg, reply_markup=reply_markup, parse_mode='Markdown')
+            await context.bot.send_message(chat_id=admin_id, text=admin_msg, parse_mode='Markdown')
             
             if attachment_path:
                  # Check if photo or document
@@ -1127,6 +1182,16 @@ async def receive_add_product_stock(update: Update, context: ContextTypes.DEFAUL
         
     context.user_data['new_product_stock'] = int(update.message.text)
     
+    await update.message.reply_text("Please enter *Available Quantities* (comma-separated, e.g., '1kg, 2kg, 5kg') or type 'None':", parse_mode='Markdown')
+    return ADD_PRODUCT_QUANTITIES
+
+async def receive_add_product_quantities(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text.lower() == 'none':
+        context.user_data['new_product_quantities'] = None
+    else:
+        context.user_data['new_product_quantities'] = text
+
     keyboard = [[InlineKeyboardButton("Skip Image", callback_data='skip_image')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Please upload a *Product Image* (optional) or click Skip:", reply_markup=reply_markup, parse_mode='Markdown')
@@ -1161,8 +1226,9 @@ async def finalize_add_product(update: Update, context: ContextTypes.DEFAULT_TYP
     price = context.user_data['new_product_price']
     stock = context.user_data['new_product_stock']
     image = context.user_data['new_product_image']
+    quantities = context.user_data.get('new_product_quantities')
     
-    database.add_product(name, desc, price, stock, image)
+    database.add_product(name, desc, price, stock, image, quantities)
     
     message = "✅ *Product Added Successfully!*\n\n"
     if update.callback_query:
@@ -1380,11 +1446,6 @@ async def confirm_feedback_submission(update: Update, context: ContextTypes.DEFA
     admin_id = os.getenv("ADMIN_ID")
     if admin_id and admin_id != "your_admin_id_here":
         try:
-            keyboard = [
-                [InlineKeyboardButton("Approve", callback_data=f"admin:approve:feedback:{feedback_id}"),
-                 InlineKeyboardButton("Reject", callback_data=f"admin:reject:feedback:{feedback_id}")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
             message = (
                 f"✍️ *New Feedback Received*\n\n"
                 f"ID: #{feedback_id}\n"
@@ -1393,7 +1454,7 @@ async def confirm_feedback_submission(update: Update, context: ContextTypes.DEFA
                 f"📝 Comment: {comment}\n"
                 f"🖼 Photo: {'Yes' if photo_path else 'No'}"
             )
-            await context.bot.send_message(chat_id=admin_id, text=message, reply_markup=reply_markup, parse_mode='Markdown')
+            await context.bot.send_message(chat_id=admin_id, text=message, parse_mode='Markdown')
             
             if photo_path:
                 await context.bot.send_photo(chat_id=admin_id, photo=open(photo_path, 'rb'), caption=f"Photo for Feedback #{feedback_id}")
@@ -1601,7 +1662,25 @@ async def receive_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if product:
                 context.user_data['order_product'] = product['name']
                 context.user_data['order_product_price'] = product['price'] # Store price for later maybe
-                await query.message.reply_text(f"You selected: *{product['name']}*.\n\nHow many would you like to order? (Please enter a number):", parse_mode='Markdown')
+                
+                # Check for available quantities
+                if product['available_quantities']:
+                    quantities = [q.strip() for q in product['available_quantities'].split(',')]
+                    keyboard = []
+                    row = []
+                    for q in quantities:
+                        row.append(InlineKeyboardButton(q, callback_data=f"qty:{q}"))
+                        if len(row) == 2:
+                            keyboard.append(row)
+                            row = []
+                    if row:
+                        keyboard.append(row)
+                    
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await query.message.reply_text(f"You selected: *{product['name']}*.\n\nPlease select a quantity:", reply_markup=reply_markup, parse_mode='Markdown')
+                else:
+                    await query.message.reply_text(f"You selected: *{product['name']}*.\n\nHow many would you like to order? (Please enter a number):", parse_mode='Markdown')
+                
                 return QUANTITY
             else:
                  await query.message.reply_text("Product not found. Please select again.")
@@ -1618,6 +1697,17 @@ async def receive_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def receive_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Stores quantity and asks for delivery address."""
+    if update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        if query.data.startswith('qty:'):
+            quantity = query.data.split(':')[1]
+            # Try to convert to int if possible, otherwise keep as string (e.g. "1kg")
+            # For simplicity, we treat it as the quantity string
+            context.user_data['order_quantity'] = quantity
+            await query.message.reply_text(f"Quantity selected: {quantity}\n\nPlease enter your *Delivery Address*:", parse_mode='Markdown')
+            return DELIVERY_ADDRESS
+
     user_input = update.message.text
     if not user_input.isdigit() or int(user_input) <= 0:
         await update.message.reply_text("Please enter a valid quantity (positive number):")
@@ -1744,7 +1834,14 @@ async def order_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for the /about command."""
-    await update.message.reply_text("You selected: About (Placeholder)")
+    lang = get_user_lang(update, context)
+    text = get_text(lang, 'about_text')
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def blog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for the blog button."""
+    await update.message.reply_text("📰 *GPBlog*\n\nVisit our blog at: https://example.com/blog", parse_mode='Markdown')
+
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Placeholder callback handler for main menu buttons."""
@@ -1779,7 +1876,8 @@ def main():
     registration_handler = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(start_registration, pattern='^register$'),
-            CommandHandler('register', start_registration)
+            CommandHandler('register', start_registration),
+            MessageHandler(filters.Regex(REGISTER_PATTERN), start_registration)
         ],
         states={
             FULL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_full_name)],
@@ -1802,7 +1900,8 @@ def main():
             CallbackQueryHandler(start_support, pattern='^(Inquiry|Complaint|contact_support)$'),
             CommandHandler('support', start_support),
             CommandHandler('complaint', start_support),
-            CommandHandler('inquiry', start_support)
+            CommandHandler('inquiry', start_support),
+            MessageHandler(filters.Regex(SUPPORT_PATTERN), start_support)
         ],
         states={
             TICKET_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_ticket_subject)],
@@ -1822,6 +1921,7 @@ def main():
         entry_points=[
             CallbackQueryHandler(start_feedback, pattern='^feedback$'),
             # No command for feedback initially requested, but can add one if needed
+            MessageHandler(filters.Regex(FEEDBACK_PATTERN), start_feedback)
         ],
         states={
             RATING: [CallbackQueryHandler(receive_rating, pattern='^[1-5]$')],
@@ -1840,14 +1940,18 @@ def main():
     order_handler = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(start_order, pattern='^order$'),
-            CommandHandler('order', start_order)
+            CommandHandler('order', start_order),
+            MessageHandler(filters.Regex(ORDER_PATTERN), start_order)
         ],
         states={
             PRODUCT_NAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_product),
                 CallbackQueryHandler(receive_product, pattern='^prod:\\d+$')
             ],
-            QUANTITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_quantity)],
+            QUANTITY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_quantity),
+                CallbackQueryHandler(receive_quantity, pattern='^qty:.+$')
+            ],
             DELIVERY_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_address)],
             PAYMENT_TYPE: [CallbackQueryHandler(receive_payment, pattern='^(Cash|Transfer)$')],
             CONFIRM_ORDER: [CallbackQueryHandler(confirm_order_submission, pattern='^(confirm_order|cancel)$')],
@@ -1864,6 +1968,7 @@ def main():
             ADD_PRODUCT_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_desc)],
             ADD_PRODUCT_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_price)],
             ADD_PRODUCT_STOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_stock)],
+            ADD_PRODUCT_QUANTITIES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_quantities)],
             ADD_PRODUCT_IMAGE: [
                 MessageHandler(filters.PHOTO, receive_add_product_image),
                 CallbackQueryHandler(skip_add_product_image, pattern='^skip_image$')
@@ -1893,8 +1998,19 @@ def main():
     # Newly added admin handlers
     application.add_handler(CallbackQueryHandler(admin_manage_user, pattern='^admin_manage_user:\\d+$'))
     application.add_handler(CallbackQueryHandler(admin_user_action_handler, pattern='^admin_act_user:.+$'))
-    application.add_handler(CallbackQueryHandler(admin_reply_to_ticket_callback, pattern='^admin_reply_to_ticket:\\d+$'))
+    # application.add_handler(CallbackQueryHandler(admin_reply_to_ticket_callback, pattern='^admin_reply_to_ticket:\\d+$')) # Replaced by ConversationHandler
     application.add_handler(CallbackQueryHandler(admin_resolve_ticket_callback, pattern='^admin_resolve_ticket:\\d+$'))
+    
+    # Admin Reply Conversation Handler
+    admin_reply_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_reply_to_ticket_start, pattern='^admin_reply_to_ticket:\\d+$')],
+        states={
+            ADMIN_REPLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_receive_reply)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        per_message=False
+    )
+    application.add_handler(admin_reply_conv_handler)
     
     # User Profile Handlers
     application.add_handler(CommandHandler('profile', profile_command))
@@ -1911,6 +2027,11 @@ def main():
 
     application.add_handler(CommandHandler("setuser", set_user))
     application.add_handler(CommandHandler('about', about_command))
+    
+    # Button Handlers
+    application.add_handler(MessageHandler(filters.Regex(PROFILE_PATTERN), profile_command))
+    application.add_handler(MessageHandler(filters.Regex(ABOUT_PATTERN), about_command))
+    application.add_handler(MessageHandler(filters.Regex(BLOG_PATTERN), blog_command))
 
     application.add_handler(CallbackQueryHandler(admin_action_handler, pattern='^admin:'))
     # Add the delete account conversation handler
@@ -1923,6 +2044,10 @@ def main():
         per_message=False
     )
     application.add_handler(delete_account_handler)
+    
+    # Language and other global callbacks
+    application.add_handler(CallbackQueryHandler(set_language, pattern='^lang_'))
+    application.add_handler(CallbackQueryHandler(order_later_callback, pattern='^order_later$'))
 
     application.add_handler(CallbackQueryHandler(button_handler)) # For other menu buttons
 
