@@ -274,6 +274,15 @@ def get_customer_by_username(username):
     conn.close()
     return customer
 
+def get_all_customers():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM customers ORDER BY full_name')
+    customers = c.fetchall()
+    conn.close()
+    return customers
+
 def set_admin_status(telegram_id, is_admin):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()

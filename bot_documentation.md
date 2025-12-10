@@ -1,6 +1,19 @@
-# Bot Documentation
+# ET Honey Trading Bot Documentation
 
 This document outlines the current functionalities of the Telegram bot and potential future enhancements.
+
+## Recent Updates (December 2025)
+
+### Bug Fixes
+- **Fixed HTTP 409 Conflict Error**: Resolved issues with multiple bot instances running simultaneously
+- **Fixed AttributeError in Admin Functions**: Corrected undefined variable usage in `admin_user_messages` handler
+- **Fixed Duplicate Functions**: Removed duplicate `admin_list_products` function that was causing crashes
+- **Fixed Admin Navigation**: Improved back button navigation in admin dashboard to use persistent keyboards consistently
+
+### New Features  
+- **Enhanced Help System**: Completely redesigned Help feature with comprehensive bot functionality documentation in both English and Amharic
+- **Bilingual Support**: Full documentation of all features available in English and አማርኛ (Amharic)
+- **Improved Admin UX**: Streamlined admin dashboard navigation with consistent persistent keyboard menus
 
 ## Current Features
 
@@ -49,11 +62,28 @@ The bot currently supports the following features, primarily managed through `bo
 - **Approval/Rejection**: Admins can approve/reject customer registrations, orders, and feedback.
 - **Admin Reply**: Admins can reply to user tickets, and these replies are routed back to the user.
 
-### 8. General Bot Commands
-- `/start`: Opens the main menu.
-- `/about`: Provides information about the bot (currently a placeholder).
-- `/cancel`: Cancels any ongoing conversation.
-- `unknown`: Fallback for unrecognized commands/messages.
+### 8. Help System
+- **Commands/Entry Points**: `/help`, Message button for "Help"
+- **Feature**: Comprehensive guide covering all bot functionalities including:
+  - Registration process
+  - Order management
+  - Profile features
+  - Feedback system
+  - Support ticket system
+  - Language switching
+  - Navigation tips
+- **Bilingual**: Full documentation available in both English and Amharic (አማርኛ)
+
+### 9. Language Support
+- **Feature**: Complete bilingual support for English and Amharic
+- **Coverage**: All menus, messages, and help documentation available in both languages
+- **Switching**: Users can easily switch between languages via the Language button
+
+### 10. General Bot Commands
+- `/start`: Opens the main menu
+- `/help`: Displays comprehensive help guide in user's language
+- `/cancel`: Cancels any ongoing conversation
+- `unknown`: Fallback for unrecognized commands/messages
 
 ## Technical Details
 - **Database**: SQLite (`honey_trading.db`) managed by `database.py`.
@@ -80,9 +110,10 @@ Based on the current structure and common bot requirements, the following featur
     - Proactive notifications for order status updates, new product announcements, or important alerts.
     - Customizable notification preferences for users.
 
-4.  **Multi-language Support**: 
-    - Implement internationalization (i18n) to support multiple languages.
-    - Allow users to select their preferred language.
+3.  **~~Multi-language Support~~**: ✅ **IMPLEMENTED**
+    - ✅ Internationalization (i18n) with English and Amharic support
+    - ✅ Users can select their preferred language
+    - ✅ All features and help documentation fully translated
 
 5.  **Advanced Admin Dashboard**: 
     - More comprehensive analytics and reporting for admin activities.

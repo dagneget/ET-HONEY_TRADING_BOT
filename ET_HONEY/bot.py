@@ -26,11 +26,37 @@ PROFILE_PATTERN = r'^(👤 Profile|👤 መገለጫ)$'
 ORDER_PATTERN = r'^(🛒 Make Order|🛒 ይዘዙ)$'
 FEEDBACK_PATTERN = r'^(✍️ Feedback|✍️ አስተያየት)$'
 SUPPORT_PATTERN = r'^(📞 Contact Support|📞 ድጋፍ ያግኙ)$'
-ABOUT_PATTERN = r'^(ℹ️ About|ℹ️ ስለ እኛ)$'
+HELP_PATTERN = r'^(ℹ️ Help|ℹ️ እርዳታ)$'
+MENU_PATTERN = r'^(☰ Main Menu|☰ ዋና ሜኑ)$'
+ADMIN_PATTERN = r'^(👮 Admin|👮 አድሚን)$'
+BACK_PATTERN = r'^(⬅️ Return to Main Menu|⬅️ ወደ ዋናው ሜኑ ተመለስ)$'
+COMPLAINT_PATTERN = r'^(📝 Complaint|📝 ቅሬታ)$'
+INQUIRY_PATTERN = r'^(❓ Inquiry|❓ ጥያቄ)$'
+LANGUAGE_PATTERN = r'^(🌐 Language|🌐 ቋንቋ)$'
 BLOG_PATTERN = r'^(📰 GPBlog)$'
+ADMIN_DASHBOARD_PATTERN = r'^(Admin Dashboard|የአስተዳዳሪ ዳሽቦርድ)$'
+ADD_ADMIN_PATTERN = r'^(➕ Add Admin|➕ አድሚን አክል)$'
+ADMIN_DASHBOARD_OVERVIEW_PATTERN = r'^(📊 Dashboard Overview|📊 የዳሽቦርድ አጠቃላይ እይታ)$'
+ADMIN_MANAGE_PRODUCTS_PATTERN = r'^(🛒 Manage Products|🛒 ምርቶችን ያስተዳድሩ)$'
+ADMIN_USER_MESSAGES_PATTERN = r'^(✉️ User Messages|✉️ የተጠቃሚ መልዕክቶች)$'
+ADMIN_USER_MANAGEMENT_PATTERN = r'^(👥 User Management|👥 የተጠቃሚ አስተዳደር)$'
+ADMIN_REPORTS_LOGS_PATTERN = r'^(📈 Reports & Logs|📈 ሪፖርቶች እና ምዝግብ ማስታወሻዎች)$'
+ADMIN_BACK_PATTERN = r'^(⬅️ Back|⬅️ ተመለስ)$'
+
+ADMIN_ADD_PRODUCT_PATTERN = r'^(➕ Add Product|➕ ምርት አክል)$'
+ADMIN_LIST_PRODUCTS_PATTERN = r'^(📋 List Products|📋 ምርቶችን ዘርዝር)$'
+ADMIN_LIST_USERS_PATTERN = r'^(👥 List All Users|👥 ሁሉንም ተጠቃሚዎች ዘርዝር)$'
+ADMIN_EXPORT_ORDERS_PATTERN = r'^(📥 Export Orders|📥 ትዕዛዞችን ላክ \(Export\))$'
+ADMIN_VIEW_ALL_TICKETS_PATTERN = r'^(View All|ሁሉንም ይመልከቱ)$'
+ADMIN_VIEW_PENDING_TICKETS_PATTERN = r'^(Pending|በመጠባበቅ ላይ)$'
+ADMIN_VIEW_CLOSED_TICKETS_PATTERN = r'^(Closed|ተዘግቷል)$'
 
 # Load environment variables
-load_dotenv()
+from pathlib import Path
+
+# Load environment variables
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 # Enable logging
 logging.basicConfig(
@@ -72,25 +98,15 @@ async def post_init(application: Application):
     """Sets the bot's menu button commands."""
     commands = [
         BotCommand("start", "Open Main Menu"),
-        BotCommand("register", "Register as Customer"),
-        BotCommand("order", "Make an Order"),
-        BotCommand("feedback", "Give Feedback"),
-        BotCommand("complaint", "File a Complaint"),
-        BotCommand("inquiry", "Make an Inquiry"),
-        BotCommand("about", "About Us"),
-        BotCommand("deleteaccount", "Delete My Account"),
-        BotCommand("admin", "Admin Dashboard"),
-        BotCommand("setadmin", "Set User as Admin (Temporary)"),
     ]
     await application.bot.set_my_commands(commands)
 
 async def admin_dashboard_overview(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Displays an overview of the bot's statistics for admins."""
-    query = update.callback_query
-    await query.answer()
-    username = query.from_user.username
+    user = update.effective_user
+    username = user.username
     if not await is_admin(username):
-        await query.message.reply_text("You are not authorized to access the admin dashboard.")
+        await update.message.reply_text("You are not authorized to access the admin dashboard.")
         return
 
     # Fetching data
@@ -110,59 +126,119 @@ async def admin_dashboard_overview(update: Update, context: ContextTypes.DEFAULT
         f"✉️ Total Messages/Inquiries: {total_messages}\n"
         f"⏳ Pending Messages: {pending_messages}\n"
         f"✅ Resolved Messages: {resolved_messages}\n\n"
-        f"🚨 System Alerts: {system_alerts}"
+        f"🚨 System Alerts: {system_alerts}\n\n"
+        f"_Use the ⬅️ Back button from the keyboard menu to return._"
     )
 
-    keyboard = [
-        [InlineKeyboardButton("⬅️ Back to Admin Menu", callback_data='admin')],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    if update.callback_query:
+        await update.callback_query.message.reply_text(text=message, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(text=message, parse_mode='Markdown')
 
-    await query.message.reply_text(text=message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def admin_user_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def admin_user_messages(update: Update, context: ContextTypes.DEFAULT_TYPE, filter_status=None) -> None:
     """Displays a list of user messages/tickets for admins with filtering options."""
-    query = update.callback_query
-    await query.answer()
-    username = query.from_user.username
+    # Determine the status from callback data if available, otherwise use argument
+    if update.callback_query and not filter_status:
+         data_parts = update.callback_query.data.split(':')
+         filter_status = data_parts[1] if len(data_parts) > 1 else None
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        username = update.effective_user.username
+    else:
+        username = update.effective_user.username
+
     if not await is_admin(username):
-        await query.message.reply_text("You are not authorized to access this feature.")
+        if update.callback_query:
+             await update.callback_query.message.reply_text("You are not authorized to access this feature.")
+        else:
+             await update.message.reply_text("You are not authorized.")
         return
 
-    data_parts = query.data.split(':')
-    filter_status = data_parts[1] if len(data_parts) > 1 else None
+    # Treat 'all' as None for DB query
+    if filter_status == 'all':
+        filter_status = None
 
     tickets = database.get_all_tickets(filter_status)
-
-    if not tickets:
-        message = f"No {filter_status.lower()} user messages found." if filter_status else "No user messages found."
-        keyboard = [
-            [InlineKeyboardButton("⬅️ Back to Admin Menu", callback_data='admin')],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.reply_text(text=message, reply_markup=reply_markup)
-        return
-
-    message_text = "*✉️ User Messages*\n\n"
-    keyboard_buttons = []
-    for ticket in tickets:
-        customer = database.get_customer_by_telegram_id(ticket['user_id'])
-        name = customer['full_name'] if customer else "Unknown User"
-        username = customer['username'] if customer else ""
-        user_display = f"{name} (@{username})" if username else name
-        message_text += f"ID: {ticket['id']} | User: {user_display} | Subject: {ticket['subject']} | Status: {ticket['status']}\n"
-        keyboard_buttons.append([InlineKeyboardButton(f"View Ticket {ticket['id']}", callback_data=f'admin_view_ticket:{ticket['id']}')])
-
-    filter_keyboard = [
-        InlineKeyboardButton("All", callback_data='admin_user_messages'),
-        InlineKeyboardButton("Pending", callback_data='admin_user_messages:Pending'),
-        InlineKeyboardButton("Closed", callback_data='admin_user_messages:closed'),
+    
+    status_label = filter_status.capitalize() if filter_status else "All"
+    text = f"✉️ *User Messages / Tickets ({status_label})*\n\n"
+    
+    # Persistent Menu for filtering - Always show this
+    lang = get_user_lang(update, context) or 'en'
+    keyboard = [
+        [get_text(lang, 'btn_view_all_tickets'), get_text(lang, 'btn_view_pending_tickets'), get_text(lang, 'btn_view_closed_tickets')],
+        [get_text(lang, 'admin_back')]
     ]
-    keyboard_buttons.insert(0, filter_keyboard)
-    keyboard_buttons.append([InlineKeyboardButton("⬅️ Back to Admin Menu", callback_data='admin')])
-    reply_markup = InlineKeyboardMarkup(keyboard_buttons)
-
-    await query.message.reply_text(text=message_text, reply_markup=reply_markup, parse_mode='Markdown')
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    if not tickets:
+        text += f"No {filter_status} tickets found." if filter_status else "No tickets found."
+    else:
+        for t in tickets[:5]: # Show last 5 for brevity in menu
+            status_icon = "🟢" if t['status'] == 'Open' else "🔴" if t['status'] == 'closed' else "🟡"
+            text += f"{status_icon} #{t['id']}: {t['subject']} ({t['status']})\n"
+            # Inline buttons for viewing specific tickets (these are per-item actions, consistent with design)
+            # We can't put these in persistent menu easily as they are dynamic.
+            # So we show the list text, and if they want to view details, they likely need an ID or we provide inline buttons JUST for the list items in the text message?
+            # The prompt said "like under admin... continued like this". 
+            # Usually for dynamic items inline buttons are best. But the prompt implies persistent structure.
+            # I will keep inline buttons for the *items* themselves in the text message, but the *navigation* (Back, Filter) is persistent.
+    
+    # We need to send the persistent menu. But we also want to show the list items clickable.
+    # Telegram allows text message with InlineKeyboard OR ReplyKeyboard, not both on same message.
+    # So we send the text with the list items (maybe just text list if we can't use inline)
+    # OR we send TWO messages: one with the list (and inline buttons), and one with the persistent menu.
+    # LIMITATION: ReplyKeyboard is attached to a message.
+    # STRATEGY: Send the list with INLINE buttons for "View #ID", and the ReplyKeyboard is attached to that message (or a follow up).
+    # wait, you can attach ReplyMarkup to a message that has InlineKeyboard? NO.
+    # Check library: Can't have both.
+    # SOLUTION: The requested "persistent buttons" are for NAVIGATION/FILTERS. 
+    # For Selecting a specific ticket, we either need a text command "View 123" or use inline buttons on the list message.
+    # If we use inline buttons for items, we lose the persistent buttons on THAT message.
+    # However, the persistent buttons from the PREVIOUS message (the menu itself) remain visible if input_field_placeholder is used or if we just send a "Menu updated" message.
+    # Better User Experience: 
+    # 1. Send the list of tickets as a text message with INLINE buttons to "View Ticket #1".
+    # 2. SEPARATELY send a "Menu Options" message with the ReplyKeyboardMarkup (Back, Filter buttons).
+    
+    # Let's try sending just the text list first, and assuming the User will just click the filters.
+    # For viewing a specific ticket, we might need a "View Ticket" button in persistent menu that asks for ID? Or just keep inline for items.
+    # Let's keep inline for items, and send the persistent menu in a separate message "Select an option:".
+    
+    # Actually, simpler: The Prompt asked for structure "like admin dashboard".
+    # Admin dashboard has persistent buttons.
+    # So "User Messages" screen should have persistent buttons for "View All", "Pending", "Back".
+    # The content (the list) appears in the chat.
+    # If I want to click a ticket, I can use an inline button on that specific message bubble.
+    # The persistent menu stays at the bottom.
+    
+    # Build inline keyboard for ticket items
+    item_reply_markup = None
+    if tickets:
+        keyboard_buttons = []
+        for ticket in tickets:
+            customer = database.get_customer_by_telegram_id(ticket['user_id'])
+            name = customer['full_name'] if customer else "Unknown User"
+            username = customer['username'] if customer else ""
+            user_display = f"{name} (@{username})" if username else name
+            text += f"ID: {ticket['id']} | User: {user_display} | Subject: {ticket['subject']} | Status: {ticket['status']}\n"
+            keyboard_buttons.append([InlineKeyboardButton(f"View Ticket {ticket['id']}", callback_data=f'admin_view_ticket:{ticket['id']}')])
+        
+        item_reply_markup = InlineKeyboardMarkup(keyboard_buttons)
+    
+    # Send the message with appropriate markup
+    if update.callback_query:
+        if item_reply_markup:
+            await update.callback_query.message.reply_text(text, reply_markup=item_reply_markup, parse_mode='Markdown')
+        else:
+            await update.callback_query.message.reply_text(text, parse_mode='Markdown')
+        await update.callback_query.message.reply_text("👇 Options:", reply_markup=reply_markup)
+    else:
+        if item_reply_markup:
+            await update.message.reply_text(text, reply_markup=item_reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(text, parse_mode='Markdown')
+        await update.message.reply_text("👇 Options:", reply_markup=reply_markup)
 
 async def admin_view_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Displays the messages within a specific ticket for admins."""
@@ -203,7 +279,14 @@ async def admin_view_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode='Markdown')
+    try:
+        await query.edit_message_text(text=message_text, reply_markup=reply_markup, parse_mode='Markdown')
+    except Exception as e:
+        # Ignore "Message is not modified" error
+        if "Message is not modified" in str(e):
+            pass
+        else:
+            logging.error(f"Error updating ticket view: {e}")
 
 async def admin_reply_to_ticket_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Starts the admin reply conversation."""
@@ -226,7 +309,9 @@ async def admin_reply_to_ticket_start(update: Update, context: ContextTypes.DEFA
     customer = database.get_customer_by_telegram_id(ticket['user_id'])
     name = customer['full_name'] if customer else "User"
 
-    await query.message.reply_text(f"📝 Please type your reply for *{name}*:", parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.message.reply_text(f"📝 Please type your reply for *{name}*:", reply_markup=reply_markup, parse_mode='Markdown')
     return ADMIN_REPLY
 
 async def admin_receive_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -309,6 +394,92 @@ async def setadmin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     database.set_admin_by_username(target_username)
     await update.message.reply_text(f"User @{target_username} has been temporarily set as admin.")
 
+async def admin_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    username = user.username
+    lang = context.user_data.get('language', 'en')
+    
+    if not await is_admin(username):
+        await update.message.reply_text("⛔ You are not authorized to access the admin area.")
+        return
+
+    # Show persistent Admin Sub-menu
+    keyboard = [
+        [get_text(lang, 'admin_dashboard'), get_text(lang, 'add_admin_title')],
+        [get_text(lang, 'back_button')]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text("👮 Admin Menu:", reply_markup=reply_markup)
+
+async def admin_dashboard_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays the persistent admin dashboard sub-menu."""
+    # This just calls the existing admin_menu which shows the inline dashboard
+    # Now updated to show persistent sub-menu
+    user = update.effective_user
+    username = user.username
+    lang = context.user_data.get('language', 'en')
+
+    if not await is_admin(username):
+        await update.message.reply_text("⛔ You are not authorized.")
+        return
+
+    keyboard = [
+        [get_text(lang, 'dashboard_overview'), get_text(lang, 'manage_products')],
+        [get_text(lang, 'user_messages'), get_text(lang, 'user_management')],
+        [get_text(lang, 'reports_logs')],
+        [get_text(lang, 'admin_back')]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text("👮 Admin Dashboard Menu:", reply_markup=reply_markup)
+
+async def admin_add_admin_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    username = user.username
+    lang = context.user_data.get('language', 'en')
+
+    if not await is_admin(username):
+        await update.message.reply_text("⛔ You are not authorized.")
+        return
+        
+    users = database.get_all_customers()
+    if not users:
+        await update.message.reply_text("No users found to promote.")
+        return
+
+    keyboard = []
+    for u in users:
+        # Show name and username if available
+        label = u['full_name']
+        if u['username']:
+            label += f" (@{u['username']})"
+        if u['is_admin']:
+            label += " (Admin)"
+        
+        # Callback data: promote_admin:<telegram_id>
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"promote_admin:{u['telegram_id']}")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(get_text(lang, 'select_user_promote'), reply_markup=reply_markup)
+
+async def promote_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data.split(':')
+    target_id = int(data[1])
+    lang = context.user_data.get('language', 'en')
+    
+    # Check if target is already admin? database.get_customer returns Row
+    target_user = database.get_customer_by_telegram_id(target_id)
+    
+    if target_user['is_admin']:
+        await query.message.reply_text(f"{target_user['full_name']} is already an admin.")
+    else:
+        database.set_admin_status(target_id, 1)
+        name = target_user['full_name']
+        msg = get_text(lang, 'admin_promoted', name=name)
+        await query.message.reply_text(msg)
+
 async def choose_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("English 🇬🇧", callback_data='lang_en')],
@@ -356,11 +527,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Use ReplyKeyboardMarkup for persistent menu (Grid Layout)
+    # Updated Persistent Menu Layout
     keyboard = [
-        [get_text(lang, 'register'), get_text(lang, 'profile')],
-        [get_text(lang, 'order'), get_text(lang, 'feedback')],
-        [get_text(lang, 'contact_support'), get_text(lang, 'about')],
-        [get_text(lang, 'blog')]
+        [get_text(lang, 'admin_button'), get_text(lang, 'register')],
+        [get_text(lang, 'menu_button')],
+        [get_text(lang, 'contact_support'), get_text(lang, 'about_help')],
+        [get_text(lang, 'language')]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
@@ -415,16 +587,17 @@ async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = update.effective_user.id
     username = update.effective_user.username
     logging.info(f"start_registration: effective_user.username is: {username}")
-
     if not username:
+        lang = get_user_lang(update, context) or 'en'
         message = "To register, you must have a Telegram username. Please set one in your Telegram settings and try again."
+        keyboard = [[InlineKeyboardButton(get_text(lang, 'cancel'), callback_data='cancel')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         if update.callback_query:
             await update.callback_query.answer()
-            await update.callback_query.message.reply_text(message)
+            await update.callback_query.message.reply_text(message, reply_markup=reply_markup)
         else:
-            await update.message.reply_text(message)
+            await update.message.reply_text(message, reply_markup=reply_markup)
         return ConversationHandler.END
-
     customer = database.get_customer_by_telegram_id(user_id)
     logging.info(f"start_registration: Customer for user_id {user_id}: {customer}")
 
@@ -466,12 +639,15 @@ async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return ConversationHandler.END
 
     lang = get_user_lang(update, context) or 'en'
+    keyboard = [[InlineKeyboardButton(get_text(lang, 'cancel'), callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     if update.callback_query:
         query = update.callback_query
         await query.answer()
-        await query.message.reply_text(get_text(lang, 'register_intro'), parse_mode='Markdown')
+        await query.message.reply_text(get_text(lang, 'register_intro'), reply_markup=reply_markup, parse_mode='Markdown')
     else: # triggered via command
-        await update.message.reply_text(get_text(lang, 'register_intro'), parse_mode='Markdown')
+        await update.message.reply_text(get_text(lang, 'register_intro'), reply_markup=reply_markup, parse_mode='Markdown')
         
     return FULL_NAME
 
@@ -485,7 +661,9 @@ async def receive_full_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.user_data['full_name'] = user_input
     lang = get_user_lang(update, context) or 'en'
-    await update.message.reply_text(get_text(lang, 'enter_phone'), parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton(get_text(lang, 'cancel'), callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(get_text(lang, 'enter_phone'), reply_markup=reply_markup, parse_mode='Markdown')
     return PHONE
 
 async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -498,7 +676,9 @@ async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data['phone'] = user_input
     lang = get_user_lang(update, context) or 'en'
-    await update.message.reply_text(get_text(lang, 'enter_email'), parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton(get_text(lang, 'cancel'), callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(get_text(lang, 'enter_email'), reply_markup=reply_markup, parse_mode='Markdown')
     return EMAIL
 
 async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -515,7 +695,9 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['email'] = user_input
     
     lang = get_user_lang(update, context) or 'en'
-    await update.message.reply_text(get_text(lang, 'enter_region'), parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton(get_text(lang, 'cancel'), callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(get_text(lang, 'enter_region'), reply_markup=reply_markup, parse_mode='Markdown')
     return REGION
 
 async def receive_region(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -526,7 +708,8 @@ async def receive_region(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_user_lang(update, context) or 'en'
     keyboard = [
         [InlineKeyboardButton(get_text(lang, 'new_customer'), callback_data='New'),
-         InlineKeyboardButton(get_text(lang, 'returning_customer'), callback_data='Returning')]
+         InlineKeyboardButton(get_text(lang, 'returning_customer'), callback_data='Returning')],
+        [InlineKeyboardButton(get_text(lang, 'cancel'), callback_data='cancel')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(get_text(lang, 'customer_type_prompt'), reply_markup=reply_markup, parse_mode='Markdown')
@@ -650,11 +833,16 @@ async def handle_returning_user_choice(update: Update, context: ContextTypes.DEF
 
 async def start_delete_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Initiates the account deletion process."""
+    if update.callback_query:
+        await update.callback_query.answer()
+    
     user_id = update.effective_user.id
     customer = database.get_customer_by_telegram_id(user_id)
+    
+    msg_sender = update.message if update.message else update.callback_query.message
 
     if not customer:
-        await update.message.reply_text("You don't have an account to delete.")
+        await msg_sender.reply_text("You don't have an account to delete.")
         return ConversationHandler.END
 
     keyboard = [
@@ -662,7 +850,7 @@ async def start_delete_account(update: Update, context: ContextTypes.DEFAULT_TYP
          InlineKeyboardButton("No, keep my account", callback_data='cancel_delete')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Are you sure you want to delete your account? This action is irreversible and will remove all your associated data (orders, tickets, feedback).", reply_markup=reply_markup)
+    await msg_sender.reply_text("Are you sure you want to delete your account? This action is irreversible and will remove all your associated data (orders, tickets, feedback).", reply_markup=reply_markup)
     return CONFIRM_DELETE
 
 async def confirm_delete_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -679,11 +867,15 @@ async def confirm_delete_account(update: Update, context: ContextTypes.DEFAULT_T
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancels and ends the conversation."""
+    """Cancels and ends the conversation, returning to home."""
+    msg = 'Process cancelled.'
     if update.message:
-        await update.message.reply_text('Process cancelled.', reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text(msg)
     elif update.callback_query:
-        await update.callback_query.message.reply_text('Process cancelled.')
+        await update.callback_query.message.reply_text(msg)
+    
+    # Return to home menu
+    await start(update, context)
     return ConversationHandler.END
 
 async def is_admin(username):
@@ -773,10 +965,13 @@ async def start_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     
     text = f"Please describe your {category} or question below:"
     
+    keyboard = [[InlineKeyboardButton(get_text(lang, 'cancel'), callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     if update.callback_query:
-        await update.callback_query.message.reply_text(text, parse_mode='Markdown')
+        await update.callback_query.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     else:
-        await update.message.reply_text(text, parse_mode='Markdown')
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
         
     return TICKET_MESSAGE
 
@@ -809,7 +1004,7 @@ async def receive_ticket_message(update: Update, context: ContextTypes.DEFAULT_T
         
     context.user_data['ticket_message'] = user_input
     
-    keyboard = [[InlineKeyboardButton("Skip Attachment", callback_data='skip_attachment')]]
+    keyboard = [[InlineKeyboardButton("Skip Attachment", callback_data='skip_attachment')], [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
@@ -1003,43 +1198,157 @@ async def admin_reply_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def admin_products_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the product management menu."""
-    query = update.callback_query
-    await query.answer()
-    
-    if not await is_admin(query.from_user.username):
-        await query.message.reply_text("You are not authorized.")
+    if update.callback_query:
+        await update.callback_query.answer()
+        user = update.effective_user
+        query_msg = update.callback_query.message
+    else:
+        user = update.effective_user
+        query_msg = update.message
+        
+    lang = get_user_lang(update, context) or 'en'
+
+    if not await is_admin(user.username):
+        await query_msg.reply_text("You are not authorized.")
         return
 
     keyboard = [
-        [InlineKeyboardButton("➕ Add Product", callback_data='admin_add_product')],
-        [InlineKeyboardButton("📋 List Products", callback_data='admin_list_products')],
-        [InlineKeyboardButton("⬅️ Back to Admin Menu", callback_data='admin')]
+        [get_text(lang, 'btn_add_product'), get_text(lang, 'btn_list_products')],
+        [get_text(lang, 'admin_back')]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.message.edit_text("🛒 *Product Management*\n\nSelect an option:", reply_markup=reply_markup, parse_mode='Markdown')
-
-async def admin_user_management_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Displays the user management menu."""
-    query = update.callback_query
-    await query.answer()
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
-    if not await is_admin(query.from_user.username):
-        await query.message.reply_text("You are not authorized.")
+    msg = "🛒 *Product Management*\n\nSelect an option:"
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(msg, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def admin_user_messages(update: Update, context: ContextTypes.DEFAULT_TYPE, filter_status=None) -> None:
+    """Displays a list of user messages/tickets for admins with filtering options."""
+    # Determine the status from callback data if available, otherwise use argument
+    if update.callback_query and not filter_status:
+         data_parts = update.callback_query.data.split(':')
+         filter_status = data_parts[1] if len(data_parts) > 1 else None
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        username = update.effective_user.username
+    else:
+        username = update.effective_user.username
+
+    if not await is_admin(username):
+        if update.callback_query:
+             await update.callback_query.message.reply_text("You are not authorized to access this feature.")
+        else:
+             await update.message.reply_text("You are not authorized.")
         return
 
-    users = database.get_recent_users(10)
+    # Treat 'all' as None for DB query
+    if filter_status == 'all':
+        filter_status = None
+
+    tickets = database.get_all_tickets(filter_status)
     
+    status_label = filter_status.capitalize() if filter_status else "All"
+    text = f"✉️ *User Messages / Tickets ({status_label})*\n\n"
+    
+    # Persistent Menu for filtering
+    lang = get_user_lang(update, context) or 'en'
+    keyboard = [
+        [get_text(lang, 'btn_view_all_tickets'), get_text(lang, 'btn_view_pending_tickets'), get_text(lang, 'btn_view_closed_tickets')],
+        [get_text(lang, 'admin_back')]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    if not tickets:
+        text += f"No {filter_status} tickets found." if filter_status else "No tickets found."
+    else:
+        for t in tickets[:5]: # Show last 5
+            status_icon = "🟢" if t['status'] == 'Open' else "🔴" if t['status'] == 'closed' else "🟡"
+            text += f"{status_icon} #{t['id']}: {t['subject']} ({t['status']})\n"
+    
+    # Send text with inline buttons for viewing items
+    item_keyboard = []
+    if tickets:
+        for t in tickets[:5]:
+            item_keyboard.append([InlineKeyboardButton(f"View #{t['id']}", callback_data=f"admin_view_ticket:{t['id']}")])
+    
+    item_reply_markup = InlineKeyboardMarkup(item_keyboard) if item_keyboard else None
+
+    if update.callback_query:
+        if item_reply_markup:
+            await update.callback_query.message.reply_text(text, reply_markup=item_reply_markup, parse_mode='Markdown')
+        else:
+            await update.callback_query.message.reply_text(text, parse_mode='Markdown')
+        await update.callback_query.message.reply_text("👇 Options:", reply_markup=reply_markup)
+    else:
+        if item_reply_markup:
+            await update.message.reply_text(text, reply_markup=item_reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(text, parse_mode='Markdown')
+        await update.message.reply_text("👇 Options:", reply_markup=reply_markup)
+
+async def admin_user_messages_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await admin_user_messages(update, context, filter_status='all')
+
+async def admin_user_messages_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await admin_user_messages(update, context, filter_status='Pending')
+
+async def admin_user_messages_closed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await admin_user_messages(update, context, filter_status='closed')
+
+
+async def admin_user_management_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays user management options."""
+    if update.callback_query:
+        await update.callback_query.answer()
+        user = update.effective_user
+    else:
+        user = update.effective_user
+
+    lang = get_user_lang(update, context) or 'en'
+
+    if not await is_admin(user.username):
+        return
+
+    keyboard = [
+        [get_text(lang, 'btn_list_users')],
+        [get_text(lang, 'admin_back')]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    msg = "👥 *User Management*\n\nSelect an option:"
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(msg, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def admin_list_users_manage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Wrapper for listing users with persistent button handling."""
+    if update.callback_query:
+        await update.callback_query.answer()
+        reply_method = update.callback_query.message.reply_text
+    else:
+        reply_method = update.message.reply_text
+
+    users = database.get_recent_users(10)
     text = "*👥 User Management (Recent 10)*\nSelect a user to manage:\n\n"
     keyboard = []
     
-    for u in users:
-        status_icon = "✅" if u['status'] == 'Approved' else "⏳" if u['status'] == 'Pending' else "❌"
-        display_name = u['username'] if u['username'] else u['full_name']
-        keyboard.append([InlineKeyboardButton(f"{status_icon} {display_name} ({u['status']})", callback_data=f"admin_manage_user:{u['id']}")])
-        
-    keyboard.append([InlineKeyboardButton("⬅️ Back to Admin Menu", callback_data='admin')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.message.edit_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    if users:
+        for u in users:
+            status_icon = "✅" if u['status'] == 'Approved' else "⏳" if u['status'] == 'Pending' else "❌"
+            display_name = u['username'] if u['username'] else u['full_name']
+            keyboard.append([InlineKeyboardButton(f"{status_icon} {display_name} ({u['status']})", callback_data=f"admin_manage_user:{u['id']}")])
+    else:
+        text += "No users found."
+    
+    # No back button needed in inline if we have persistent menu, or keep it for consistency
+    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+    await reply_method(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def admin_manage_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays details and actions for a specific user."""
@@ -1120,48 +1429,107 @@ async def admin_user_action_handler(update: Update, context: ContextTypes.DEFAUL
     # Refresh the view
     await admin_manage_user(update, context) # Re-render the user details with updated info
 
-async def admin_reports_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Displays reports and logs."""
-    query = update.callback_query
-    await query.answer()
-    
-    if not await is_admin(query.from_user.username):
-        await query.message.reply_text("You are not authorized.")
+async def admin_reports_logs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Displays reports and logs menu."""
+    if update.callback_query:
+        await update.callback_query.answer()
+        username = update.effective_user.username
+        reply_method = update.callback_query.message.reply_text
+    else:
+        username = update.effective_user.username
+        reply_method = update.message.reply_text
+
+    lang = get_user_lang(update, context) or 'en'
+
+    if not await is_admin(username):
+        await reply_method("You are not authorized to access reports.")
         return
 
+    # Fetching data
     total_revenue = database.get_total_revenue()
+    total_users = database.get_total_users()
     total_orders = database.get_total_orders_count()
     total_tickets = database.get_total_tickets_count()
-    total_users = database.get_total_users()
     
     text = (
-        "*📈 Reports & Logs*\n\n"
+        f"📈 *Reports & Logs*\n\n"
         f"💰 *Total Revenue:* ${total_revenue:,.2f}\n"
         f"🛒 *Total Orders:* {total_orders}\n"
         f"✉️ *Total Tickets:* {total_tickets}\n"
         f"👥 *Total Users:* {total_users}\n"
     )
     
-    keyboard = [[InlineKeyboardButton("⬅️ Back to Admin Menu", callback_data='admin')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.message.edit_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    keyboard = [
+        [get_text(lang, 'btn_export_orders')],
+        [get_text(lang, 'admin_back')]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    await reply_method(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def admin_export_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Placeholder for export logic since we don't have the full file
+    # This was previously implemented or stubbed.
+    await update.message.reply_text("📥 Exporting orders... (Feature to be implemented fully)")
+
+async def admin_list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Lists all products for management."""
+    if update.callback_query:
+        await update.callback_query.answer()
+        user = update.effective_user
+        reply_method = update.callback_query.message.reply_text
+    else:
+        user = update.effective_user
+        reply_method = update.message.reply_text
+
+    if not await is_admin(user.username):
+        await reply_method("You are not authorized.")
+        return
+
+    try:
+        products = database.get_all_products()
+        if not products:
+            await reply_method("No products found.")
+            return
+
+        text = "📋 *Product List*\n\n"
+        keyboard = []
+        
+        for p in products:
+            keyboard.append([InlineKeyboardButton(f"🗑 Delete {p['name']} - ${p['price']}", callback_data=f"admin_delete_product:{p['id']}")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await reply_method(text, reply_markup=reply_markup, parse_mode='Markdown')
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        await reply_method(f"❌ Error listing products: {e}\n\n`{tb}`", parse_mode='Markdown')
 
 async def start_add_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Starts the add product conversation."""
-    query = update.callback_query
-    await query.answer()
+    if update.callback_query:
+        await update.callback_query.answer()
+        reply_method = update.callback_query.message.reply_text
+    else:
+        reply_method = update.message.reply_text
     
-    await query.message.reply_text("➕ *Add New Product*\n\nPlease enter the *Product Name*:", parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await reply_method("➕ *Add New Product*\n\nPlease enter the *Product Name*:", reply_markup=reply_markup, parse_mode='Markdown')
     return ADD_PRODUCT_NAME
 
 async def receive_add_product_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['new_product_name'] = update.message.text
-    await update.message.reply_text("Please enter the *Product Description*:", parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Please enter the *Product Description*:", reply_markup=reply_markup, parse_mode='Markdown')
     return ADD_PRODUCT_DESC
 
 async def receive_add_product_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['new_product_desc'] = update.message.text
-    await update.message.reply_text("Please enter the *Price* (e.g., 1500.50):", parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Please enter the *Price* (e.g., 1500.50):", reply_markup=reply_markup, parse_mode='Markdown')
     return ADD_PRODUCT_PRICE
 
 async def receive_add_product_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1172,7 +1540,9 @@ async def receive_add_product_price(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text("Invalid price. Please enter a number:")
         return ADD_PRODUCT_PRICE
         
-    await update.message.reply_text("Please enter the *Stock Quantity*:", parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Please enter the *Stock Quantity*:", reply_markup=reply_markup, parse_mode='Markdown')
     return ADD_PRODUCT_STOCK
 
 async def receive_add_product_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1182,7 +1552,9 @@ async def receive_add_product_stock(update: Update, context: ContextTypes.DEFAUL
         
     context.user_data['new_product_stock'] = int(update.message.text)
     
-    await update.message.reply_text("Please enter *Available Quantities* (comma-separated, e.g., '1kg, 2kg, 5kg') or type 'None':", parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Please enter *Available Quantities* (comma-separated, e.g., '1kg, 2kg, 5kg') or type 'None':", reply_markup=reply_markup, parse_mode='Markdown')
     return ADD_PRODUCT_QUANTITIES
 
 async def receive_add_product_quantities(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1192,7 +1564,7 @@ async def receive_add_product_quantities(update: Update, context: ContextTypes.D
     else:
         context.user_data['new_product_quantities'] = text
 
-    keyboard = [[InlineKeyboardButton("Skip Image", callback_data='skip_image')]]
+    keyboard = [[InlineKeyboardButton("Skip Image", callback_data='skip_image')], [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Please upload a *Product Image* (optional) or click Skip:", reply_markup=reply_markup, parse_mode='Markdown')
     return ADD_PRODUCT_IMAGE
@@ -1236,26 +1608,7 @@ async def finalize_add_product(update: Update, context: ContextTypes.DEFAULT_TYP
     else:
         await update.message.reply_text(message, parse_mode='Markdown')
 
-async def admin_list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    products = database.get_all_products()
-    if not products:
-        await query.message.reply_text("No products found.")
-        return
 
-    text = "*📋 Product List*\n\n"
-    keyboard = []
-    
-    for p in products:
-        text += f"🔹 *{p['name']}* - ${p['price']} (Stock: {p['stock']})\n"
-        keyboard.append([InlineKeyboardButton(f"❌ Delete {p['name']}", callback_data=f"admin_delete_product:{p['id']}")])
-        
-    keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data='admin_products')])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.message.edit_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def admin_delete_product_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1312,6 +1665,7 @@ async def start_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         [InlineKeyboardButton("⭐ 1", callback_data='1'), InlineKeyboardButton("⭐ 2", callback_data='2'), InlineKeyboardButton("⭐ 3", callback_data='3')],
         [InlineKeyboardButton("⭐ 4", callback_data='4'), InlineKeyboardButton("⭐ 5", callback_data='5')]
     ]
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data='cancel')])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     text = "✍️ *We value your feedback!*\n\nPlease rate your experience with us:"
@@ -1330,7 +1684,9 @@ async def receive_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rating = int(query.data)
     context.user_data['feedback_rating'] = rating
     
-    await query.message.reply_text(f"You rated us {rating} stars! ⭐\n\nPlease write a brief comment or review:", parse_mode='Markdown')
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.message.reply_text(f"You rated us {rating} stars! ⭐\n\nPlease write a brief comment or review:", reply_markup=reply_markup, parse_mode='Markdown')
     return COMMENT
 
 async def receive_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1342,7 +1698,7 @@ async def receive_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     context.user_data['feedback_comment'] = user_input
     
-    keyboard = [[InlineKeyboardButton("Skip Photo", callback_data='skip_photo')]]
+    keyboard = [[InlineKeyboardButton("Skip Photo", callback_data='skip_photo')], [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
@@ -1488,7 +1844,8 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🛒 My Orders", callback_data='my_orders')],
         [InlineKeyboardButton("✉️ My Tickets", callback_data='my_tickets')],
-        [InlineKeyboardButton("✍️ My Feedback", callback_data='my_feedback')]
+        [InlineKeyboardButton("✍️ My Feedback", callback_data='my_feedback')],
+        [InlineKeyboardButton("❌ Delete Account", callback_data='delete_account_init')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -1642,11 +1999,14 @@ async def start_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return PRODUCT_NAME
     else:
         # Fallback to manual entry if no products in DB
+        # Fallback to manual entry if no products in DB
         text = "🛒 *New Order*\n\nPlease enter the *Product Name* you would like to order:"
+        keyboard = [[InlineKeyboardButton("❌ Cancel Order", callback_data='cancel')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         if update.callback_query:
-            await update.callback_query.message.reply_text(text, parse_mode='Markdown')
+            await update.callback_query.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
         else:
-            await update.message.reply_text(text, parse_mode='Markdown')
+            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
         return PRODUCT_NAME
 
 async def receive_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1679,7 +2039,7 @@ async def receive_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     await query.message.reply_text(f"You selected: *{product['name']}*.\n\nPlease select a quantity:", reply_markup=reply_markup, parse_mode='Markdown')
                 else:
-                    await query.message.reply_text(f"You selected: *{product['name']}*.\n\nHow many would you like to order? (Please enter a number):", parse_mode='Markdown')
+                    await query.message.reply_text(f"You selected: *{product['name']}*.\n\nHow many would you like to order? (Please enter a number):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]), parse_mode='Markdown')
                 
                 return QUANTITY
             else:
@@ -1692,7 +2052,7 @@ async def receive_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return PRODUCT_NAME
         
     context.user_data['order_product'] = user_input
-    await update.message.reply_text("How many would you like to order? (Please enter a number):")
+    await update.message.reply_text("How many would you like to order? (Please enter a number):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]))
     return QUANTITY
 
 async def receive_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1705,7 +2065,7 @@ async def receive_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Try to convert to int if possible, otherwise keep as string (e.g. "1kg")
             # For simplicity, we treat it as the quantity string
             context.user_data['order_quantity'] = quantity
-            await query.message.reply_text(f"Quantity selected: {quantity}\n\nPlease enter your *Delivery Address*:", parse_mode='Markdown')
+            await query.message.reply_text(f"Quantity selected: {quantity}\n\nPlease enter your *Delivery Address*:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]), parse_mode='Markdown')
             return DELIVERY_ADDRESS
 
     user_input = update.message.text
@@ -1714,7 +2074,7 @@ async def receive_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return QUANTITY
         
     context.user_data['order_quantity'] = int(user_input)
-    await update.message.reply_text("Please enter your *Delivery Address*:", parse_mode='Markdown')
+    await update.message.reply_text("Please enter your *Delivery Address*:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]), parse_mode='Markdown')
     return DELIVERY_ADDRESS
 
 async def receive_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1728,7 +2088,8 @@ async def receive_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [InlineKeyboardButton("Cash on Delivery", callback_data='Cash'),
-         InlineKeyboardButton("Bank Transfer", callback_data='Transfer')]
+         InlineKeyboardButton("Bank Transfer", callback_data='Transfer')],
+        [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Please select a *Payment Method*:", reply_markup=reply_markup, parse_mode='Markdown')
@@ -1832,10 +2193,10 @@ async def order_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for the /order command."""
     await update.message.reply_text("You selected: Make Order (Placeholder)")
 
-async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for the /about command."""
-    lang = get_user_lang(update, context)
-    text = get_text(lang, 'about_text')
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for the help command."""
+    lang = get_user_lang(update, context) or 'en'
+    text = get_text(lang, 'help_text')
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def blog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1857,8 +2218,40 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_feedback(update, context)
     elif choice == 'complaint' or choice == 'inquiry' or choice == 'contact_support':
         await start_support(update, context)
-    elif choice == 'about':
-        await about_command(update, context)
+    elif choice == 'help':
+        await help_command(update, context)
+
+async def start_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays the persistent main menu options."""
+    lang = get_user_lang(update, context) or 'en'
+    
+    keyboard = [
+        [get_text(lang, 'order'), get_text(lang, 'feedback')],
+        [get_text(lang, 'complaint'), get_text(lang, 'inquiry')],
+        [get_text(lang, 'profile')],
+        [get_text(lang, 'back_button')]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    msg = "Please select an option:"
+    if update.message:
+        await update.message.reply_text(msg, reply_markup=reply_markup)
+    elif update.callback_query:
+        await update.callback_query.message.reply_text(msg, reply_markup=reply_markup)
+
+async def back_to_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Returns to the top-level menu."""
+    await start(update, context)
+
+
+
+async def admin_set_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Shows options to set another user as admin."""
+    query = update.callback_query
+    await query.answer()
+    
+    # Simple instruction for now, or could be a conversation
+    await query.message.reply_text("To set an admin, please use the command:\n/setadmin <username>\n\nExample: /setadmin johndoe")
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Fallback for unknown messages."""
@@ -1871,6 +2264,28 @@ def main():
         return
 
     application = ApplicationBuilder().token(token).post_init(post_init).build()
+
+    # Common Navigation Handlers for Fallbacks
+    navigation_handlers = [
+        CommandHandler('cancel', cancel),
+        CallbackQueryHandler(cancel, pattern='^cancel$'),
+        MessageHandler(filters.Regex(MENU_PATTERN), start_main_menu),
+        MessageHandler(filters.Regex(ADMIN_PATTERN), admin_button_handler),
+        MessageHandler(filters.Regex(ADMIN_DASHBOARD_PATTERN), admin_dashboard_text_handler),
+        MessageHandler(filters.Regex(ADMIN_DASHBOARD_OVERVIEW_PATTERN), admin_dashboard_overview),
+        MessageHandler(filters.Regex(ADMIN_MANAGE_PRODUCTS_PATTERN), admin_products_menu),
+        MessageHandler(filters.Regex(ADMIN_USER_MESSAGES_PATTERN), admin_user_messages),
+        MessageHandler(filters.Regex(ADMIN_USER_MANAGEMENT_PATTERN), admin_user_management_menu),
+        MessageHandler(filters.Regex(ADMIN_REPORTS_LOGS_PATTERN), admin_reports_logs),
+        MessageHandler(filters.Regex(ADMIN_BACK_PATTERN), admin_button_handler),
+        MessageHandler(filters.Regex(ADMIN_ADD_PRODUCT_PATTERN), start_add_product), # Direct link to conversation
+        MessageHandler(filters.Regex(ADMIN_LIST_PRODUCTS_PATTERN), admin_list_products),
+        MessageHandler(filters.Regex(ADMIN_LIST_USERS_PATTERN), admin_list_users_manage), # Assuming this callback exists or need a wrapper
+        MessageHandler(filters.Regex(ADMIN_EXPORT_ORDERS_PATTERN), admin_export_orders), # Direct link to function
+        MessageHandler(filters.Regex(ADMIN_VIEW_ALL_TICKETS_PATTERN), admin_user_messages_all),
+        MessageHandler(filters.Regex(ADMIN_VIEW_PENDING_TICKETS_PATTERN), admin_user_messages_pending),
+        MessageHandler(filters.Regex(ADMIN_VIEW_CLOSED_TICKETS_PATTERN), admin_user_messages_closed),
+    ]
 
     # Registration Conversation Handler
     registration_handler = ConversationHandler(
@@ -1886,12 +2301,11 @@ def main():
             REGION: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_region)],
             CUSTOMER_TYPE: [CallbackQueryHandler(receive_customer_type, pattern='^(New|Returning)$')],
             CONFIRMATION: [CallbackQueryHandler(confirm_registration, pattern='^(confirm|cancel)$')],
-        RETURNING_USER_OPTIONS: [
-            CallbackQueryHandler(handle_returning_user_choice, pattern='^(reactivate_account|register_new_account)$')
-        ],
+            RETURNING_USER_OPTIONS: [
+                CallbackQueryHandler(handle_returning_user_choice, pattern='^(reactivate_account|register_new_account)$')
+            ],
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=False 
+        fallbacks=navigation_handlers,
     )
 
     # Support Conversation Handler
@@ -1912,8 +2326,7 @@ def main():
             ],
             CONFIRM_TICKET: [CallbackQueryHandler(confirm_ticket_submission, pattern='^(confirm_ticket|cancel)$')]
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=False
+        fallbacks=navigation_handlers,
     )
 
     # Feedback Conversation Handler
@@ -1926,14 +2339,14 @@ def main():
         states={
             RATING: [CallbackQueryHandler(receive_rating, pattern='^[1-5]$')],
             COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_comment)],
+
             PHOTO: [
                 MessageHandler(filters.PHOTO, receive_photo),
                 CallbackQueryHandler(skip_photo, pattern='^skip_photo$')
             ],
             CONFIRM_FEEDBACK: [CallbackQueryHandler(confirm_feedback_submission, pattern='^(confirm_feedback|cancel)$')],
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=False
+        fallbacks=navigation_handlers,
     )
 
     # Order Conversation Handler
@@ -1956,13 +2369,15 @@ def main():
             PAYMENT_TYPE: [CallbackQueryHandler(receive_payment, pattern='^(Cash|Transfer)$')],
             CONFIRM_ORDER: [CallbackQueryHandler(confirm_order_submission, pattern='^(confirm_order|cancel)$')],
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=False
+        fallbacks=navigation_handlers,
     )
 
     # Add Product Conversation Handler
     add_product_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_add_product, pattern='^admin_add_product$')],
+        entry_points=[
+            CallbackQueryHandler(start_add_product, pattern='^admin_add_product$'),
+            MessageHandler(filters.Regex(ADMIN_ADD_PRODUCT_PATTERN), start_add_product)
+        ],
         states={
             ADD_PRODUCT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_name)],
             ADD_PRODUCT_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_desc)],
@@ -1970,12 +2385,10 @@ def main():
             ADD_PRODUCT_STOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_stock)],
             ADD_PRODUCT_QUANTITIES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_quantities)],
             ADD_PRODUCT_IMAGE: [
-                MessageHandler(filters.PHOTO, receive_add_product_image),
                 CallbackQueryHandler(skip_add_product_image, pattern='^skip_image$')
             ],
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=False
+        fallbacks=navigation_handlers,
     )
 
     # Add Handlers
@@ -1994,6 +2407,7 @@ def main():
     application.add_handler(CallbackQueryHandler(admin_user_management_menu, pattern='^admin_user_management$'))
     application.add_handler(CallbackQueryHandler(admin_reports_logs, pattern='^admin_reports_logs$'))
     application.add_handler(CallbackQueryHandler(admin_menu, pattern='^admin$'))
+    application.add_handler(CallbackQueryHandler(admin_set_admin_menu, pattern='^admin_set_admin_menu$'))
     
     # Newly added admin handlers
     application.add_handler(CallbackQueryHandler(admin_manage_user, pattern='^admin_manage_user:\\d+$'))
@@ -2007,8 +2421,7 @@ def main():
         states={
             ADMIN_REPLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_receive_reply)]
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=False
+        fallbacks=navigation_handlers,
     )
     application.add_handler(admin_reply_conv_handler)
     
@@ -2021,27 +2434,49 @@ def main():
     application.add_handler(CallbackQueryHandler(my_feedback_callback, pattern='^my_feedback$'))
 
     application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler('menu', start))
     application.add_handler(CommandHandler('admin', admin_menu))
     application.add_handler(CommandHandler("feedback", start_feedback))
     application.add_handler(CommandHandler("setadmin", setadmin))
 
     application.add_handler(CommandHandler("setuser", set_user))
-    application.add_handler(CommandHandler('about', about_command))
+    application.add_handler(CommandHandler('help', help_command))
     
     # Button Handlers
     application.add_handler(MessageHandler(filters.Regex(PROFILE_PATTERN), profile_command))
-    application.add_handler(MessageHandler(filters.Regex(ABOUT_PATTERN), about_command))
+    application.add_handler(MessageHandler(filters.Regex(HELP_PATTERN), help_command))
     application.add_handler(MessageHandler(filters.Regex(BLOG_PATTERN), blog_command))
+    application.add_handler(MessageHandler(filters.Regex(MENU_PATTERN), start_main_menu))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_PATTERN), admin_button_handler))
+    application.add_handler(MessageHandler(filters.Regex(BACK_PATTERN), back_to_home))
+    application.add_handler(MessageHandler(filters.Regex(COMPLAINT_PATTERN), start_support))
+    application.add_handler(MessageHandler(filters.Regex(INQUIRY_PATTERN), start_support))
+    # application.add_handler(MessageHandler(filters.Regex(LANGUAGE_PATTERN), choose_language)) # Handled below
+
+    application.add_handler(MessageHandler(filters.Regex(LANGUAGE_PATTERN), choose_language))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_DASHBOARD_PATTERN), admin_dashboard_text_handler))
+    application.add_handler(MessageHandler(filters.Regex(ADD_ADMIN_PATTERN), admin_add_admin_text_handler))
+    
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_DASHBOARD_OVERVIEW_PATTERN), admin_dashboard_overview))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_MANAGE_PRODUCTS_PATTERN), admin_products_menu))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_USER_MESSAGES_PATTERN), admin_user_messages))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_USER_MANAGEMENT_PATTERN), admin_user_management_menu))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_REPORTS_LOGS_PATTERN), admin_reports_logs))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_BACK_PATTERN), admin_button_handler))
+
+    application.add_handler(CallbackQueryHandler(promote_admin_callback, pattern='^promote_admin:\\d+$'))
 
     application.add_handler(CallbackQueryHandler(admin_action_handler, pattern='^admin:'))
-    # Add the delete account conversation handler
+    # Add    # Delete Account Conversation
     delete_account_handler = ConversationHandler(
-        entry_points=[CommandHandler('deleteaccount', start_delete_account)],
+        entry_points=[
+            CommandHandler('deleteaccount', start_delete_account),
+            CallbackQueryHandler(start_delete_account, pattern='^delete_account_init$')
+        ],
         states={
             CONFIRM_DELETE: [CallbackQueryHandler(confirm_delete_account, pattern='^(confirm_delete|cancel_delete)$')]
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=False
+        fallbacks=[CommandHandler('cancel', cancel), CallbackQueryHandler(cancel, pattern='^cancel$')],
     )
     application.add_handler(delete_account_handler)
     
@@ -2052,6 +2487,15 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler)) # For other menu buttons
 
     # Admin Reply Handler (Must be before general fallback)
+    # Missing Admin Sub-menu Handlers
+    # application.add_handler(MessageHandler(filters.Regex(ADMIN_ADD_PRODUCT_PATTERN), start_add_product)) # Handled in Conversation
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_LIST_PRODUCTS_PATTERN), admin_list_products))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_LIST_USERS_PATTERN), admin_list_users_manage))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_EXPORT_ORDERS_PATTERN), admin_export_orders))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_VIEW_ALL_TICKETS_PATTERN), admin_user_messages_all))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_VIEW_PENDING_TICKETS_PATTERN), admin_user_messages_pending))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_VIEW_CLOSED_TICKETS_PATTERN), admin_user_messages_closed))
+
     # Using filters.REPLY to catch replies
     application.add_handler(MessageHandler(filters.REPLY, admin_reply_handler))
     

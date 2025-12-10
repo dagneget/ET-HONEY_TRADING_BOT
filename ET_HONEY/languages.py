@@ -7,7 +7,7 @@ TRANS = {
         'order': "🛒 Make Order",
         'feedback': "✍️ Feedback",
         'contact_support': "📞 Contact Support",
-        'about': "ℹ️ About",
+        'about_help': "ℹ️ Help",
         'blog': "📰 GPBlog",
         'select_language': "Please select your language / ቋንቋ ይምረጡ:",
         'language_set': "Language set to English.",
@@ -44,7 +44,84 @@ TRANS = {
         'pending_approval': "Your registration is pending admin approval.",
         'account_deleted': "Your account is deleted.",
         'admin_dashboard': "Admin Dashboard",
-        'about_text': "*About ET Honey Trading*\n\nWe provide high quality honey products from Ethiopia.",
+        'admin_button': "👮 Admin",
+        'complaint': "📝 Complaint",
+        'inquiry': "❓ Inquiry",
+        'delete_account_btn': "❌ Delete Account",
+        'set_admin_btn': "👮 Set Admin",
+        'add_admin_title': "➕ Add Admin",
+        'select_user_promote': "Select a user to promote to Admin:",
+        'admin_promoted': "User {name} is now an Admin.",
+        'back_button': "⬅️ Return to Main Menu",
+        'admin_back': "⬅️ Back",
+        'dashboard_overview': "📊 Dashboard Overview",
+        'manage_products': "🛒 Manage Products",
+        'user_messages': "✉️ User Messages",
+        'user_management': "👥 User Management",
+        'reports_logs': "📈 Reports & Logs",
+        'btn_add_product': "➕ Add Product",
+        'btn_list_products': "📋 List Products",
+        'btn_list_users': "👥 List All Users",
+        'btn_export_orders': "📥 Export Orders",
+        'btn_view_all_tickets': "View All",
+        'btn_view_pending_tickets': "Pending",
+        'btn_view_closed_tickets': "Closed",
+        'language': "🌐 Language",
+        'help_text': """📖 *ET Honey Trading Bot - Help Guide*
+
+🍯 *Welcome to ET Honey Trading!*
+This bot helps you order premium Ethiopian honey products easily.
+
+*🔹 Main Features:*
+
+👤 *Registration*
+• Create your account to start ordering
+• Provide your contact details and location
+• Get instant approval to place orders
+
+🛒 *Make Orders*
+• Browse our honey product catalog
+• Select products and quantities
+• Choose delivery address and payment method
+• Track your order status
+
+👥 *Profile Management*
+• View your profile information
+• See your order history
+• Check your support tickets
+• Review your feedback submissions
+• Delete account if needed
+
+✍️ *Feedback*
+• Rate your experience (1-5 stars)
+• Share comments about our service
+• Attach photos (optional)
+• Help us improve!
+
+📞 *Contact Support*
+• File complaints or inquiries
+• Attach relevant documents/photos
+• Get responses from our support team
+• Track ticket status
+
+🌐 *Language Support*
+• Switch between English and Amharic
+• All features available in both languages
+
+☰ *Main Menu*
+• Access all features quickly
+• Navigate easily through the bot
+
+---
+💡 *Quick Tips:*
+• Use /start to return to main menu anytime
+• All orders require registration first
+• You can cancel any operation by clicking ❌ Cancel
+• Support tickets allow direct conversation with our team
+
+📧 *Need Help?*
+Contact our support team using the 📞 Contact Support button!""",
+        'menu_button': "☰ Main Menu",
         'skip': "Skip"
     },
     'am': {
@@ -54,7 +131,7 @@ TRANS = {
         'order': "🛒 ይዘዙ",
         'feedback': "✍️ አስተያየት",
         'contact_support': "📞 ድጋፍ ያግኙ",
-        'about': "ℹ️ ስለ እኛ",
+        'about_help': "ℹ️ እርዳታ",
         'blog': "📰 GPBlog",
         'select_language': "ቋንቋ ይምረጡ / Please select your language:",
         'language_set': "ቋንቋው ወደ አማርኛ ተቀይሯል።",
@@ -75,7 +152,7 @@ TRANS = {
         'reg_success': "✅ ምዝገባ ተሳክቷል! አሁን ማዘዝ ይችላሉ።",
         'order_now_prompt': "አሁን ማዘዝ ይፈልጋሉ?",
         'order_now': "አሁን ይዘዙ",
-        'order_later': "በኋላ",
+        'order_later': "ወደኋላ ተመለስ",
         'order_later_msg': "እሺ! ከዋናው ሜኑ በማንኛውም ጊዜ ማዘዝ ይችላሉ።",
         'choose_product': "እባክዎ ምርት ይምረጡ:",
         'choose_quantity': "እባክዎ መጠን ይምረጡ:",
@@ -91,7 +168,84 @@ TRANS = {
         'pending_approval': "ምዝገባዎ የአስተዳዳሪ ማረጋገጫ በመጠባበቅ ላይ ነው።",
         'account_deleted': "መለያዎ ተሰርዟል።",
         'admin_dashboard': "የአስተዳዳሪ ዳሽቦርድ",
-        'about_text': "*ስለ ኢትዮ ማር ንግድ*\n\nከፍተኛ ጥራት ያላቸውን የማር ምርቶችን ከኢትዮጵያ እናቀርባለን።",
+        'admin_button': "👮 አድሚን",
+        'complaint': "📝 ቅሬታ",
+        'inquiry': "❓ ጥያቄ",
+        'delete_account_btn': "❌ መለያ ሰርዝ",
+        'set_admin_btn': "👮 አድሚን መድብ",
+        'add_admin_title': "➕ አድሚን አክል",
+        'select_user_promote': "አድሚን ለማድረግ ተጠቃሚ ይምረጡ:",
+        'admin_promoted': "ተጠቃሚ {name} አድሚን ሆኗል.",
+        'back_button': "⬅️ ወደ ዋናው ሜኑ ተመለስ",
+        'admin_back': "⬅️ ተመለስ",
+        'dashboard_overview': "📊 የዳሽቦርድ አጠቃላይ እይታ",
+        'manage_products': "🛒 ምርቶችን ያስተዳድሩ",
+        'user_messages': "✉️ የተጠቃሚ መልዕክቶች",
+        'user_management': "👥 የተጠቃሚ አስተዳደር",
+        'reports_logs': "📈 ሪፖርቶች እና ምዝግብ ማስታወሻዎች",
+        'btn_add_product': "➕ ምርት አክል",
+        'btn_list_products': "📋 ምርቶችን ዘርዝር",
+        'btn_list_users': "👥 ሁሉንም ተጠቃሚዎች ዘርዝር",
+        'btn_export_orders': "📥 ትዕዛዞችን ላክ (Export)",
+        'btn_view_all_tickets': "ሁሉንም ይመልከቱ",
+        'btn_view_pending_tickets': "በመጠባበቅ ላይ",
+        'btn_view_closed_tickets': "ተዘግቷል",
+        'language': "🌐 ቋንቋ",
+        'help_text': """📖 *ኢትዮ ማር ንግድ ቦት - የእርዳታ መመሪያ*
+
+🍯 *እንኳን ወደ ኢትዮ ማር ንግድ በደህና መጡ!*
+ይህ ቦት ከፍተኛ ጥራት ያላቸውን የኢትዮጵያ ማር ምርቶች በቀላሉ እንዲያዙ ያግዝዎታል።
+
+*🔹 ዋና ባህሪያት:*
+
+👤 *ምዝገባ*
+• ማዘዝ ለመጀመር መለያዎን ይፍጠሩ
+• የእውቂያ ዝርዝሮችዎን እና አካባቢዎን ያቅርቡ
+• ትዕዛዝ ለማስገባት ፈጣን ማረጋገጫ ያግኙ
+
+🛒 *ትዕዛዝ ያድርጉ*
+• የማር ምርት ካታሎጋችንን ይመልከቱ
+• ምርቶችን እና መጠኖችን ይምረጡ
+• የመላኪያ አድራሻ እና የመክፈያ ዘዴ ይምረጡ
+• የትዕዛዝ ሁኔታዎን ይከታተሉ
+
+👥 *የመገለጫ አስተዳደር*
+• የመገለጫ መረጃዎን ይመልከቱ
+• የትዕዛዝ ታሪክዎን ይመልከቱ
+• የድጋፍ ቲኬቶችዎን ይመልከቱ
+• የአስተያየት ግብአቶችዎን ይገምግሙ
+• በሚፈልጉ ጊዜ መለያ ሰርዝ
+
+✍️ *አስተያየት*
+• ልምድዎን ይገምግሙ (ከ1-5 ኮከቦች)
+• ስለ አገልግሎታችን አስተያየቶችን ያካፍሉ
+• ፎቶዎችን ያያይዙ (አማራጭ)
+• እንድንሻሻል ያግዙን!
+
+📞 *ድጋፍ ያግኙ*
+• ቅሬታዎችን ወይም ጥያቄዎችን ያስገቡ
+• ተዛማጅ ሰነዶችን/ፎቶዎችን ያያይዙ
+• ከድጋፍ ቡድናችን ምላሽ ያግኙ
+• የቲኬት ሁኔታን ይከታተሉ
+
+🌐 *የቋንቋ ድጋፍ*
+• በእንግሊዝኛ እና አማርኛ መካከል ይቀይሩ
+• ሁሉም ባህሪያት በሁለቱም ቋንቋዎች ይገኛሉ
+
+☰ *ዋና ሜኑ*
+• ሁሉንም ባህሪያት በፍጥነት ይድረሱ
+• በቦቱ በኩል በቀላሉ ይንቀሳቀሱ
+
+---
+💡 *ፈጣን ምክሮች:*
+• በማንኛውም ጊዜ ወደ ዋና ሜኑ ለመመለስ /start ይጠቀሙ
+• ሁሉም ትዕዛዞች መጀመሪያ ምዝገባን ይፈልጋሉ
+• በ❌ ሰርዝ በመጫን ማንኛውንም ክዋኔ መሰረዝ ይችላሉ
+• የድጋፍ ቲኬቶች ከቡድናችን ጋር ቀጥታ ንግግርን ይፈቅዳሉ
+
+📧 *እርዳታ ይፈልጋሉ?*
+📞 ድጋፍ ያግኙ የሚለውን ቁልፍ በመጠቀም የድጋፍ ቡድናችንን ያነጋግሩ!""",
+        'menu_button': "☰ ዋና ሜኑ",
         'skip': "ለጊዜው ይለፉ"
     }
 }
