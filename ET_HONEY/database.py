@@ -57,6 +57,10 @@ def init_db():
         c.execute("ALTER TABLE customers ADD COLUMN username TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        c.execute("ALTER TABLE orders ADD COLUMN price REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     
     # Messages Table
     c.execute('''
@@ -96,7 +100,64 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Products Table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            description TEXT,
+            price REAL,
+            stock INTEGER DEFAULT 0,
+            image_path TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     
+    conn.commit()
+    conn.close()
+
+def add_product(name, description, price, stock, image_path=None):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO products (name, description, price, stock, image_path)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (name, description, price, stock, image_path))
+    product_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return product_id
+
+def get_all_products():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM products ORDER BY name')
+    products = c.fetchall()
+    conn.close()
+    return products
+
+def get_product(product_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM products WHERE id = ?', (product_id,))
+    product = c.fetchone()
+    conn.close()
+    return product
+
+def delete_product(product_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('DELETE FROM products WHERE id = ?', (product_id,))
+    conn.commit()
+    conn.close()
+
+def update_product_stock(product_id, new_stock):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('UPDATE products SET stock = ? WHERE id = ?', (new_stock, product_id))
     conn.commit()
     conn.close()
 
@@ -128,13 +189,13 @@ def update_feedback_status(feedback_id, status):
     conn.commit()
     conn.close()
 
-def create_order(user_id, product_name, quantity, delivery_address, payment_type):
+def create_order(user_id, product_name, quantity, delivery_address, payment_type, price=0):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO orders (user_id, product_name, quantity, delivery_address, payment_type)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (user_id, product_name, quantity, delivery_address, payment_type))
+        INSERT INTO orders (user_id, product_name, quantity, delivery_address, payment_type, price)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (user_id, product_name, quantity, delivery_address, payment_type, price))
     order_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -303,6 +364,44 @@ def update_ticket_attachment_path(ticket_id, attachment_path):
     conn.commit()
     conn.close()
 
+def get_orders_by_user(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    # user_id in orders table is the telegram_id
+    c.execute('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC', (user_id,))
+    orders = c.fetchall()
+    conn.close()
+    return orders
+
+def get_tickets_by_user(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    # user_id in tickets table is the telegram_id
+    c.execute('SELECT * FROM tickets WHERE user_id = ? ORDER BY created_at DESC', (user_id,))
+    tickets = c.fetchall()
+    conn.close()
+    return tickets
+
+def get_ticket_messages(ticket_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM messages WHERE ticket_id = ? ORDER BY created_at ASC', (ticket_id,))
+    messages = c.fetchall()
+    conn.close()
+    return messages
+
+def get_feedback_by_user(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM feedback WHERE user_id = ? ORDER BY created_at DESC', (user_id,))
+    feedback = c.fetchall()
+    conn.close()
+    return feedback
+
 def export_table_to_excel(table_name):
     conn = sqlite3.connect(DB_PATH)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -354,6 +453,15 @@ def permanently_delete_customer(telegram_id):
     conn.commit()
     conn.close()
 
+def get_recent_users(limit=10):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM customers ORDER BY created_at DESC LIMIT ?', (limit,))
+    users = c.fetchall()
+    conn.close()
+    return users
+
 def get_total_users():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -361,6 +469,49 @@ def get_total_users():
     count = c.fetchone()[0]
     conn.close()
     return count
+
+def get_total_revenue():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    # Assuming orders table has 'total_price' or we calculate from product price * quantity
+    # But wait, orders table structure: user_id, product_name, quantity, address, payment, status, created_at.
+    # It doesn't store price! We need to join with products or store price in orders.
+    # Storing price in orders is better for historical accuracy.
+    # For now, I'll check if orders has price.
+    c.execute("PRAGMA table_info(orders)")
+    columns = [col[1] for col in c.fetchall()]
+    conn.close()
+    
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    if 'price' in columns:
+        c.execute('SELECT SUM(price * quantity) FROM orders WHERE status = "Approved"')
+    else:
+        # Fallback: join with products (inaccurate if price changed)
+        # Or just return 0 for now if column missing.
+        # Actually, let's just count orders for now.
+        return 0 
+        
+    result = c.fetchone()[0]
+    conn.close()
+    return result if result else 0
+
+def get_total_orders_count():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM orders')
+    result = c.fetchone()[0]
+    conn.close()
+    return result
+
+def get_total_tickets_count():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT COUNT(*) FROM tickets')
+    result = c.fetchone()[0]
+    conn.close()
+    return result
 
 def get_total_messages():
     conn = sqlite3.connect(DB_PATH)
