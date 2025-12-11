@@ -3240,6 +3240,11 @@ def main():
     application.add_handler(MessageHandler(filters.Regex(ADMIN_REPORTS_LOGS_PATTERN), admin_reports_logs))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_EXPORT_USERS_PATTERN), admin_export_users))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_EXPORT_ORDERS_PATTERN), admin_export_orders))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_LIST_PRODUCTS_PATTERN), admin_list_products))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_LIST_USERS_PATTERN), admin_list_users_manage))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_VIEW_ALL_TICKETS_PATTERN), admin_user_messages_all))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_VIEW_PENDING_TICKETS_PATTERN), admin_user_messages_pending))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_VIEW_CLOSED_TICKETS_PATTERN), admin_user_messages_closed))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_BACK_PATTERN), admin_button_handler))
 
     application.add_handler(CallbackQueryHandler(promote_admin_callback, pattern='^promote_admin:\\d+$'))
