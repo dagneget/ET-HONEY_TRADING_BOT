@@ -91,7 +91,12 @@ The bot currently supports the following features, primarily managed through `bo
 - **Coverage**: All menus, messages, and help documentation available in both languages
 - **Switching**: Users can easily switch between languages via the Language button
 
-### 10. General Bot Commands
+### 11. Notification System
+- **Order Updates**: Real-time notifications for order approval or rejection.
+- **Customizable Preferences**: Users can toggle notifications for Orders, New Products, and Alerts in their Profile.
+- **Broadcast System**: Admins can send broadcast messages to all users (e.g. for announcements).
+
+### 12. General Bot Commands
 - `/start`: Opens the main menu
 - `/help`: Displays comprehensive help guide in user's language
 - `/cancel`: Cancels any ongoing conversation
@@ -118,18 +123,19 @@ Based on the current structure and common bot requirements, the following featur
     - Implement actual payment processing (e.g., Stripe, PayPal) instead of just `Cash` or `Transfer` options.
     - Provide secure transaction handling and order confirmation.
 
-3.  **Notification System**: 
-    - Proactive notifications for order status updates, new product announcements, or important alerts.
-    - Customizable notification preferences for users.
+3.  **Notification System**: ✅ **IMPLEMENTED**
+    - ✅ Order status updates.
+    - ✅ Customizable user preferences (Orders, Products, Alerts).
+    - ✅ Admin broadcast system.
 
-3.  **~~Multi-language Support~~**: ✅ **IMPLEMENTED**
+4.  **~~Multi-language Support~~**: ✅ **IMPLEMENTED**
     - ✅ Internationalization (i18n) with English and Amharic support
     - ✅ Users can select their preferred language
     - ✅ All features and help documentation fully translated
 
 5.  **Advanced Admin Dashboard**: 
     - More comprehensive analytics and reporting for admin activities.
-    - Tools for bulk user management or broadcast messages.
+    - Tools for bulk user management.
     - Dedicated sections for managing product inventory, promotions, and customer support.
 
 6.  **FAQ/Knowledge Base**: 
