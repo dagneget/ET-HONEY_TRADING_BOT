@@ -777,3 +777,58 @@ def update_notification_preferences(telegram_id, notify_orders=None, notify_prod
         c.execute(query, params)
         conn.commit()
     conn.close()
+
+def get_top_selling_products(limit=5):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT product_name, SUM(quantity) as total_qty 
+        FROM orders 
+        WHERE status != 'Rejected' AND status != 'cancel'
+        GROUP BY product_name 
+        ORDER BY total_qty DESC 
+        LIMIT ?
+    ''', (limit,))
+    results = c.fetchall()
+    conn.close()
+    return results
+
+def get_recent_sales_trend(days=7):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    # SQLite doesn't have great date interval syntax by default, need to be careful
+    c.execute(f"SELECT date(created_at) as day, COUNT(*) as count, SUM(price) as revenue FROM orders WHERE status != 'Rejected' AND status != 'cancel' AND created_at >= date('now', '-{days} days') GROUP BY day ORDER BY day ASC")
+    results = c.fetchall()
+    conn.close()
+    return results
+
+def get_low_stock_products(threshold=5):
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM products WHERE stock <= ? ORDER BY stock ASC', (threshold,))
+    results = c.fetchall()
+    conn.close()
+    return results
+
+def export_users_csv():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        df = pd.read_sql_query("SELECT * FROM customers", conn)
+        return df.to_csv(index=False)
+    except Exception as e:
+        logging.error(f"Error exporting users: {e}")
+        return ""
+    finally:
+        conn.close()
+
+def export_orders_csv():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        df = pd.read_sql_query("SELECT * FROM orders", conn)
+        return df.to_csv(index=False)
+    except Exception as e:
+        logging.error(f"Error exporting orders: {e}")
+        return ""
+    finally:
+        conn.close()

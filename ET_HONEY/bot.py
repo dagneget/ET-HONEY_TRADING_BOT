@@ -16,6 +16,8 @@ import database
 from languages import get_text
 import re
 import uuid
+import io
+from datetime import datetime
 
 # Allowed file extensions for uploads
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.pdf', '.doc', '.docx', '.txt'}
@@ -51,6 +53,7 @@ ADMIN_VIEW_ALL_TICKETS_PATTERN = r'^(View All|ሁሉንም ይመልከቱ)$'
 ADMIN_VIEW_PENDING_TICKETS_PATTERN = r'^(Pending|በመጠባበቅ ላይ)$'
 ADMIN_VIEW_CLOSED_TICKETS_PATTERN = r'^(Closed|ተዘግቷል)$'
 ADMIN_BROADCAST_PATTERN = r'^(📢 Broadcast Message|📢 የብሮድካስት መልእክት)$'
+ADMIN_EXPORT_USERS_PATTERN = r'^(📥 Export Users|📥 ተጠቃሚዎችን ላክ \(Export\))$'
 
 # Load environment variables
 from pathlib import Path
@@ -151,7 +154,16 @@ async def admin_dashboard_overview(update: Update, context: ContextTypes.DEFAULT
     resolved_messages = database.get_resolved_messages()
     total_revenue = database.get_total_revenue()
     total_orders = database.get_total_orders_count()
+    
+    # Check Alerts
+    low_stock = database.get_low_stock_products(5)
     system_alerts = "No active system alerts."
+    if low_stock:
+        count = len(low_stock)
+        items = ", ".join([p['name'] for p in low_stock[:3]])
+        if count > 3:
+             items += f" and {count-3} more"
+        system_alerts = f"⚠️ {count} Products Low Stock: {items}"
 
     message = (
         f"*📊 Admin Dashboard Overview*\n\n"
@@ -161,7 +173,7 @@ async def admin_dashboard_overview(update: Update, context: ContextTypes.DEFAULT
         f"✉️ Total Messages/Inquiries: {total_messages}\n"
         f"⏳ Pending Messages: {pending_messages}\n"
         f"✅ Resolved Messages: {resolved_messages}\n\n"
-        f"🚨 System Alerts: {system_alerts}\n\n"
+        f"🚨 *System Alerts:* {system_alerts}\n\n"
         f"_Use the ⬅️ Back button from the keyboard menu to return._"
     )
 
@@ -1596,7 +1608,7 @@ async def admin_user_action_handler(update: Update, context: ContextTypes.DEFAUL
     await admin_manage_user(update, context) # Re-render the user details with updated info
 
 async def admin_reports_logs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Displays reports and logs menu."""
+    """Displays reports and logs menu with analytics."""
     if update.callback_query:
         await update.callback_query.answer()
         username = update.effective_user.username
@@ -1617,21 +1629,80 @@ async def admin_reports_logs(update: Update, context: ContextTypes.DEFAULT_TYPE)
     total_orders = database.get_total_orders_count()
     total_tickets = database.get_total_tickets_count()
     
+    # Advanced Analytics
+    top_products = database.get_top_selling_products(5)
+    
+    analytics_text = ""
+    if top_products:
+        analytics_text += "\n🏆 *Top Selling Products:*\n"
+        for name, qty in top_products:
+            analytics_text += f"• {name}: {qty} sold\n"
+            
     text = (
         f"📈 *Reports & Logs*\n\n"
         f"💰 *Total Revenue:* ${total_revenue:,.2f}\n"
         f"🛒 *Total Orders:* {total_orders}\n"
         f"✉️ *Total Tickets:* {total_tickets}\n"
         f"👥 *Total Users:* {total_users}\n"
+        f"{analytics_text}\n"
+        f"_Select an option below to export data:_"
     )
     
     keyboard = [
-        [get_text(lang, 'btn_export_orders')],
+        [get_text(lang, 'btn_export_orders'), get_text(lang, 'btn_export_users')],
         [get_text(lang, 'admin_back')]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
     await reply_method(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def admin_export_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exports users to CSV."""
+    user = update.effective_user
+    if not await is_admin(user.username):
+        return
+
+    msg = await update.message.reply_text("⏳ Generating Users export...")
+    
+    csv_data = database.export_users_csv()
+    if not csv_data:
+        await msg.edit_text("❌ Failed to export users or no data available.")
+        return
+    
+    try:
+        await update.message.reply_document(
+            document=io.BytesIO(csv_data.encode()),
+            filename=f"users_{datetime.now().strftime('%Y%m%d')}.csv",
+            caption="👥 Users Export"
+        )
+        await msg.delete()
+    except Exception as e:
+        logging.error(f"Error sending users csv: {e}")
+        await msg.edit_text("❌ Error sending file.")
+
+async def admin_export_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exports orders to CSV."""
+    user = update.effective_user
+    if not await is_admin(user.username):
+        return
+
+    msg = await update.message.reply_text("⏳ Generating Orders export...")
+    
+    csv_data = database.export_orders_csv()
+    if not csv_data:
+        await msg.edit_text("❌ Failed to export orders or no data available.")
+        return
+        
+    try:
+        await update.message.reply_document(
+            document=io.BytesIO(csv_data.encode()),
+            filename=f"orders_{datetime.now().strftime('%Y%m%d')}.csv",
+            caption="🛒 Orders Export"
+        )
+        await msg.delete()
+    except Exception as e:
+        logging.error(f"Error sending orders csv: {e}")
+        await msg.edit_text("❌ Error sending file.")
 
 async def admin_export_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Placeholder for export logic since we don't have the full file
@@ -3170,6 +3241,8 @@ def main():
     application.add_handler(MessageHandler(filters.Regex(ADMIN_USER_MESSAGES_PATTERN), admin_user_messages))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_USER_MANAGEMENT_PATTERN), admin_user_management_menu))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_REPORTS_LOGS_PATTERN), admin_reports_logs))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_EXPORT_USERS_PATTERN), admin_export_users))
+    application.add_handler(MessageHandler(filters.Regex(ADMIN_EXPORT_ORDERS_PATTERN), admin_export_orders))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_BACK_PATTERN), admin_button_handler))
 
     application.add_handler(CallbackQueryHandler(promote_admin_callback, pattern='^promote_admin:\\d+$'))
