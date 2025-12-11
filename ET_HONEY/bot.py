@@ -426,7 +426,7 @@ async def admin_process_order_callback(update: Update, context: ContextTypes.DEF
         # Or just append status line if possible.
         # Simplest is to edit the buttons away and add a status line.
         await query.message.edit_reply_markup(reply_markup=None)
-        await query.message.reply_text(f"{icon} Order #{order_id} marked as {new_status}.", quote=True)
+        await query.message.reply_text(f"{icon} Order #{order_id} marked as {new_status}.")
         
         # Notify User
         order = database.get_order(order_id)
