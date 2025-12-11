@@ -305,6 +305,15 @@ def set_admin_by_username(username):
     conn.close()
     logging.info(f"Set admin status for username {username} to 1 and status to Approved.")
 
+def get_all_admin_telegram_ids():
+    """Returns a list of telegram IDs for all admins."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT telegram_id FROM customers WHERE is_admin = 1')
+    admins = c.fetchall()
+    conn.close()
+    return [admin[0] for admin in admins if admin[0]]  # Filter out None values
+
 def update_customer_status_by_telegram_id(telegram_id, status):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()

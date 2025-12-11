@@ -879,14 +879,20 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def is_admin(username):
-    logging.info(f"Checking admin status for username: {username}")
-    if not username:
-        logging.info(f"Username is empty for admin check.")
-        return False
     customer = database.get_customer_by_username(username)
-    is_admin_status = customer and customer['is_admin'] == 1
-    logging.info(f"Admin status for {username}: {is_admin_status} (Customer data: {customer})")
-    return is_admin_status
+    if customer:
+        return customer['is_admin'] == 1
+    return False
+
+async def notify_all_admins(context: ContextTypes.DEFAULT_TYPE, message: str, parse_mode='Markdown', reply_markup=None):
+    """Send notification to all admins."""
+    admin_ids = database.get_all_admin_telegram_ids()
+    
+    for admin_id in admin_ids:
+        try:
+            await context.bot.send_message(chat_id=admin_id, text=message, parse_mode=parse_mode, reply_markup=reply_markup)
+        except Exception as e:
+            logging.error(f"Failed to send notification to admin {admin_id}: {e}")
 
 async def admin_action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles admin approval/rejection actions."""
@@ -900,6 +906,27 @@ async def admin_action_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     action = data[1] # approve or reject
     # entity = data[2] # orders (others removed)
     entity_id = int(data[3])
+    
+    # Check if order/entity already processed to prevent conflicts
+    if 'orders' in query.data:
+        order = database.get_order(entity_id)
+        if not order:
+            await query.answer("⚠️ Order not found!", show_alert=True)
+            return
+        
+        # Check if already processed
+        if order['status'] != 'Pending':
+            await query.answer(
+                f"⚠️ This order was already {order['status']} by another admin!",
+                show_alert=True
+            )
+            # Update the message to show it's already processed
+            try:
+                new_text = query.message.text + f"\n\n⚠️ *ALREADY {order['status'].upper()}*"
+                await query.edit_message_text(text=new_text, parse_mode='Markdown', reply_markup=None)
+            except:
+                pass
+            return
     
     if action == 'approve':
         if 'orders' in query.data:
@@ -1124,29 +1151,28 @@ async def confirm_ticket_submission(update: Update, context: ContextTypes.DEFAUL
     
     await query.message.reply_text(f"✅ Ticket #{ticket_id} created! We will review it shortly.")
     
-    # Notify Admin
-    admin_id = os.getenv("ADMIN_ID")
-    if admin_id and admin_id != "your_admin_id_here":
-        try:
-            admin_msg = (
-                f"🛠 *New Support Ticket*\n\n"
-                f"Ticket: #{ticket_id}\n"
-                f"Type: {category}\n"
-                f"Subject: {subject}\n"
-                f"User: {update.effective_user.full_name} (@{update.effective_user.username or 'NoUsername'}) (ID: {user_id})\n\n"
-                f"{message_text}"
-            )
-            await context.bot.send_message(chat_id=admin_id, text=admin_msg, parse_mode='Markdown')
-            
-            if attachment_path:
-                 # Check if photo or document
+    # Notify All Admins
+    admin_msg = (
+        f"🛠 *New Support Ticket*\n\n"
+        f"Ticket: #{ticket_id}\n"
+        f"Type: {category}\n"
+        f"Subject: {subject}\n"
+        f"User: {update.effective_user.full_name} (@{update.effective_user.username or 'NoUsername'}) (ID: {user_id})\n\n"
+        f"{message_text}"
+    )
+    await notify_all_admins(context, admin_msg)
+    
+    if attachment_path:
+        for admin_id in database.get_all_admin_telegram_ids():
+            try:
                 if attachment_path.lower().endswith(('.jpg', '.jpeg', '.png')):
-                     await context.bot.send_photo(chat_id=admin_id, photo=open(attachment_path, 'rb'), caption=f"Attachment for Ticket #{ticket_id}")
+                    await context.bot.send_photo(chat_id=admin_id, photo=open(attachment_path, 'rb'), caption=f"Attachment for Ticket #{ticket_id}")
+
                 else:
                      await context.bot.send_document(chat_id=admin_id, document=open(attachment_path, 'rb'), caption=f"Attachment for Ticket #{ticket_id}")
 
-        except Exception as e:
-            logging.error(f"Failed to notify admin: {e}")
+            except Exception as e:
+                logging.error(f"Failed to notify admin: {e}")
             
     return ConversationHandler.END
 
@@ -1632,20 +1658,18 @@ async def user_reply_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ticket_id = ticket['id']
         database.add_message(ticket_id, 'user', message_text)
         
-        # Notify Admin
-        admin_id = os.getenv("ADMIN_ID")
-        if admin_id and admin_id != "your_admin_id_here":
-            try:
-                admin_message = (
-                    f"📩 *New Support Message*\n"
-                    f"Ticket: #{ticket_id}\n"
-                    f"User: {update.effective_user.full_name} (ID: {user_id})\n\n"
-                    f"{message_text}\n\n"
-                    f"👉 *Reply to this message to answer.*"
-                )
-                await context.bot.send_message(chat_id=admin_id, text=admin_message, parse_mode='Markdown')
-            except Exception as e:
-                logging.error(f"Failed to notify admin: {e}")
+        # Notify All Admins
+        try:
+            admin_message = (
+                f"📩 *New Support Message*\n"
+                f"Ticket: #{ticket_id}\n"
+                f"User: {update.effective_user.full_name} (ID: {user_id})\n\n"
+                f"{message_text}\n\n"
+                f"👉 *Reply to this message to answer.*"
+            )
+            await notify_all_admins(context, admin_message)
+        except Exception as e:
+            logging.error(f"Failed to notify admin: {e}")
         
         await update.message.reply_text("✅ Message sent to support.")
     else:
@@ -1807,25 +1831,27 @@ async def confirm_feedback_submission(update: Update, context: ContextTypes.DEFA
     
     await query.message.reply_text("✅ Thank you for your feedback! It has been submitted for review.")
     
-    # Notify Admin
-    admin_id = os.getenv("ADMIN_ID")
-    if admin_id and admin_id != "your_admin_id_here":
-        try:
-            message = (
-                f"✍️ *New Feedback Received*\n\n"
-                f"ID: #{feedback_id}\n"
-                f"User ID: {user_id}\n"
-                f"⭐ Rating: {rating}/5\n"
-                f"📝 Comment: {comment}\n"
-                f"🖼 Photo: {'Yes' if photo_path else 'No'}"
-            )
-            await context.bot.send_message(chat_id=admin_id, text=message, parse_mode='Markdown')
-            
-            if photo_path:
-                await context.bot.send_photo(chat_id=admin_id, photo=open(photo_path, 'rb'), caption=f"Photo for Feedback #{feedback_id}")
-                
-        except Exception as e:
-            logging.error(f"Failed to send admin notification for feedback: {e}")
+    # Notify All Admins
+    try:
+        message = (
+            f"✍️ *New Feedback Received*\n\n"
+            f"ID: #{feedback_id}\n"
+            f"User ID: {user_id}\n"
+            f"⭐ Rating: {rating}/5\n"
+            f"📝 Comment: {comment}\n"
+            f"🖼 Photo: {'Yes' if photo_path else 'No'}"
+        )
+        await notify_all_admins(context, message)
+        
+        if photo_path:
+            for admin_id in database.get_all_admin_telegram_ids():
+                try:
+                    await context.bot.send_photo(chat_id=admin_id, photo=open(photo_path, 'rb'), caption=f"Photo for Feedback #{feedback_id}")
+                except Exception as e:
+                    logging.error(f"Failed to send photo to admin {admin_id}: {e}")
+                    
+    except Exception as e:
+        logging.error(f"Failed to send admin notification for feedback: {e}")
             
     return ConversationHandler.END
 
@@ -2150,25 +2176,23 @@ async def confirm_order_submission(update: Update, context: ContextTypes.DEFAULT
     
     # Notify Admin
     admin_id = os.getenv("ADMIN_ID")
-    if admin_id and admin_id != "your_admin_id_here":
-        try:
-            keyboard = [
-                [InlineKeyboardButton("Approve", callback_data=f"admin:approve:orders:{order_id}"),
-                 InlineKeyboardButton("Reject", callback_data=f"admin:reject:orders:{order_id}")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            message = (
-                f"🛒 *New Order Received*\n\n"
-                f"Order ID: #{order_id}\n"
-                f"User ID: {user_id}\n"
-                f"Product: {product}\n"
-                f"Quantity: {quantity}\n"
-                f"Address: {address}\n"
-                f"Payment: {payment}"
-            )
-            await context.bot.send_message(chat_id=admin_id, text=message, reply_markup=reply_markup, parse_mode='Markdown')
-        except Exception as e:
-            logging.error(f"Failed to send admin notification for order: {e}")
+    # Notify All Admins about new order
+    message = (
+        f"🛒 *New Order Received*\n\n"
+        f"Order ID: #{order_id}\n"
+        f"User ID: {user_id}\n"
+        f"Product: {product}\n"
+        f"Quantity: {quantity}\n"
+        f"Address: {address}\n"
+        f"Payment: {payment}\n"
+        f"Price: ${price:.2f}"
+    )
+    keyboard = [
+        [InlineKeyboardButton("Approve", callback_data=f"admin:approve:orders:{order_id}"),
+         InlineKeyboardButton("Reject", callback_data=f"admin:reject:orders:{order_id}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await notify_all_admins(context, message, reply_markup=reply_markup)
             
     return ConversationHandler.END
 
