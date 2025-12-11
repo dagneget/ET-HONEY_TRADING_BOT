@@ -1704,10 +1704,7 @@ async def admin_export_orders(update: Update, context: ContextTypes.DEFAULT_TYPE
         logging.error(f"Error sending orders csv: {e}")
         await msg.edit_text("❌ Error sending file.")
 
-async def admin_export_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Placeholder for export logic since we don't have the full file
-    # This was previously implemented or stubbed.
-    await update.message.reply_text("📥 Exporting orders... (Feature to be implemented fully)")
+
 
 async def admin_list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Lists all products for management."""
@@ -3268,14 +3265,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler)) # For other menu buttons
 
     # Admin Reply Handler (Must be before general fallback)
-    # Missing Admin Sub-menu Handlers
-    # application.add_handler(MessageHandler(filters.Regex(ADMIN_ADD_PRODUCT_PATTERN), start_add_product)) # Handled in Conversation
-    application.add_handler(MessageHandler(filters.Regex(ADMIN_LIST_PRODUCTS_PATTERN), admin_list_products))
-    application.add_handler(MessageHandler(filters.Regex(ADMIN_LIST_USERS_PATTERN), admin_list_users_manage))
-    application.add_handler(MessageHandler(filters.Regex(ADMIN_EXPORT_ORDERS_PATTERN), admin_export_orders))
-    application.add_handler(MessageHandler(filters.Regex(ADMIN_VIEW_ALL_TICKETS_PATTERN), admin_user_messages_all))
-    application.add_handler(MessageHandler(filters.Regex(ADMIN_VIEW_PENDING_TICKETS_PATTERN), admin_user_messages_pending))
-    application.add_handler(MessageHandler(filters.Regex(ADMIN_VIEW_CLOSED_TICKETS_PATTERN), admin_user_messages_closed))
+    # Using filters.REPLY to catch replies
 
     # Using filters.REPLY to catch replies
     application.add_handler(MessageHandler(filters.REPLY, admin_reply_handler))
