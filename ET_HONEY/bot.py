@@ -435,12 +435,14 @@ async def admin_process_order_callback(update: Update, context: ContextTypes.DEF
             customer = database.get_customer_by_telegram_id(user_id)
             
             should_notify = True
-            if customer and 'notify_orders' in customer.keys() and customer['notify_orders'] == 0:
-                should_notify = False
+            if customer:
+                customer_dict = dict(customer)
+                if customer_dict.get('notify_orders') == 0:
+                    should_notify = False
             
             if should_notify:
                 msg_key = 'order_approved' if new_status == 'Approved' else 'order_rejected'
-                user_lang = customer['language'] if customer and 'language' in customer.keys() else 'en'
+                user_lang = customer_dict.get('language', 'en') if customer else 'en'
                 message_text = get_text(user_lang, msg_key, id=order_id)
                 
                 try:
@@ -450,7 +452,7 @@ async def admin_process_order_callback(update: Update, context: ContextTypes.DEF
                     
     except Exception as e:
         logging.error(f"Error in admin_process_order_callback: {e}")
-        await query.message.reply_text("❌ Error processing order action.")
+        await query.message.reply_text(f"❌ Error processing order action: {e}")
 
 async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Displays the admin dashboard menu."""
