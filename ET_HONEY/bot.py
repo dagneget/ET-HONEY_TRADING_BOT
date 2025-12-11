@@ -1716,6 +1716,8 @@ async def receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # 1. Create a preliminary feedback entry to get an ID
     feedback_id = database.create_feedback(user_id, rating, comment)
+    context.user_data['feedback_id'] = feedback_id  # Store for later use
+
     context.user_data['feedback_id'] = feedback_id
 
     if not update.message.photo:
@@ -1751,6 +1753,13 @@ async def skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data['feedback_photo'] = None
+    
+    # Create feedback entry (since photo was skipped, we create it here)
+    user_id = update.effective_user.id
+    rating = context.user_data['feedback_rating']
+    comment = context.user_data['feedback_comment']
+    feedback_id = database.create_feedback(user_id, rating, comment)
+    context.user_data['feedback_id'] = feedback_id
     
     await show_feedback_confirmation(update, context)
     return CONFIRM_FEEDBACK
@@ -2385,6 +2394,7 @@ def main():
             ADD_PRODUCT_STOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_stock)],
             ADD_PRODUCT_QUANTITIES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_quantities)],
             ADD_PRODUCT_IMAGE: [
+                MessageHandler(filters.PHOTO, receive_add_product_image),
                 CallbackQueryHandler(skip_add_product_image, pattern='^skip_image$')
             ],
         },
