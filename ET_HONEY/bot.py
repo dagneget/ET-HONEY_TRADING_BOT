@@ -95,7 +95,35 @@ ADMIN_REPLY = 70
 ADD_PRODUCT_NAME, ADD_PRODUCT_DESC, ADD_PRODUCT_PRICE, ADD_PRODUCT_STOCK, ADD_PRODUCT_QUANTITIES, ADD_PRODUCT_IMAGE = range(80, 86)
 
 async def post_init(application: Application):
-    """Sets the bot's menu button commands."""
+    """Called after the application is initialized."""
+    database.init_db()
+    
+    # Set bot description (shows before user starts the bot)
+    bot_description = (
+        "🍯 Welcome to ET HONEY Trading Bot! 🍯\n\n"
+        "Your trusted partner for premium Ethiopian honey.\n\n"
+        "✨ What we offer:\n"
+        "• 100% Pure Ethiopian Honey\n"
+        "• Direct from local beekeepers\n"
+        "• Fast & reliable delivery\n"
+        "• Multiple payment options\n\n"
+        "Click START to begin ordering!\n\n"
+        "---\n\n"
+        "🍯 ወደ ኢቲ ማር ንግድ ቦት እንኳን በደህና መጡ! 🍯\n\n"
+        "ለተሻለ የኢትዮጵያ ማር የእርስዎ አማራጭ።\n\n"
+        "START የሚለውን ጠቅ ያድርጉ!"
+    )
+    
+    bot_short_description = (
+        "🍯 Premium Ethiopian Honey Trading Bot - Order pure honey with fast delivery!"
+    )
+    
+    try:
+        await application.bot.set_my_description(description=bot_description)
+        await application.bot.set_my_short_description(short_description=bot_short_description)
+        logging.info("Bot description set successfully")
+    except Exception as e:
+        logging.error(f"Failed to set bot description: {e}")
     commands = [
         BotCommand("start", "Open Main Menu"),
     ]
@@ -2312,7 +2340,7 @@ def main():
         return
 
     application = ApplicationBuilder().token(token).post_init(post_init).build()
-
+    
     # Common Navigation Handlers for Fallbacks
     navigation_handlers = [
         CommandHandler('cancel', cancel),
