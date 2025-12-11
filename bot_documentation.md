@@ -100,7 +100,12 @@ The bot currently supports the following features, primarily managed through `bo
 - `/start`: Opens the main menu
 - `/help`: Displays comprehensive help guide in user's language
 - `/cancel`: Cancels any ongoing conversation
+- `/cancel`: Cancels any ongoing conversation
 - `unknown`: Fallback for unrecognized commands/messages
+
+### 13. Social Media Integration
+- **Subscribe Button**: New button in main menu "📢 Subscribe to Channel".
+- **Links**: Provides direct access to official TikTok and Telegram channels.
 
 ## Technical Details
 - **Database**: SQLite (`honey_trading.db`) managed by `database.py`.
