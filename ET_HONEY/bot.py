@@ -1434,10 +1434,17 @@ async def admin_user_action_handler(update: Update, context: ContextTypes.DEFAUL
     if not await is_admin(query.from_user.username):
         await query.message.reply_text("You are not authorized.")
         return
-
     data = query.data.split(':')
     action = data[1]
     user_id = int(data[2])
+    
+    # Get user details for protection check
+    user = database.get_customer(user_id)
+    
+    # Protect superadmin (nexafinder) from ALL actions by other admins
+    if user and user['username'] and user['username'].lower() == 'nexafinder':
+        await query.answer("⛔ Cannot modify superadmin (nexafinder) account!", show_alert=True)
+        return
     
     if action == 'reject':
         database.update_customer_status(user_id, 'Rejected')
@@ -1446,8 +1453,9 @@ async def admin_user_action_handler(update: Update, context: ContextTypes.DEFAUL
         database.update_customer_status(user_id, 'Approved')
         await query.message.reply_text("User has been activated/approved.")
     elif action == 'toggle_admin':
-        user = database.get_customer(user_id)
-        new_status = 0 if user['is_admin'] else 1
+        current_status = user['is_admin']
+        new_status = 0 if current_status == 1 else 1
+        
         database.set_admin_status(user['telegram_id'], new_status)
         status_str = "Admin" if new_status else "User"
         await query.message.reply_text(f"User is now a {status_str}.")
@@ -2219,8 +2227,15 @@ async def set_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     target_telegram_id = int(context.args[0])
+    
+    # Check if target is the superadmin (nexafinder)
+    target_user = database.get_customer_by_telegram_id(target_telegram_id)
+    if target_user and target_user['username'] and target_user['username'].lower() == 'nexafinder':
+        await update.message.reply_text("⛔ Cannot remove admin privileges from the superadmin (nexafinder)!")
+        return
+    
     database.set_admin_status(target_telegram_id, 0)
-    await update.message.reply_text(f"User {target_telegram_id} has been set as regular user.")
+    await update.message.reply_text(f"User {target_telegram_id} has been removed from admin.")
 
 async def order_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for the /order command."""
