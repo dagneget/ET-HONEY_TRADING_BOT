@@ -133,7 +133,8 @@ Contact our support team using the 📞 Contact Support button!""",
         'out_of_stock_btn': "❌ Out of Stock",
         'back_to_catalog': "⬅️ Back to Catalog",
         'edit_product_btn': "✏️ Edit",
-        'delete_product_btn': "🗑️ Delete"
+        'delete_product_btn': "🗑️ Delete",
+        'broadcast_msg_btn': "📢 Broadcast Message"
     },
     'am': {
         'welcome': "እንኳን ወደ ኢትዮ ማር ንግድ በደህና መጡ! እባክዎ አማራጭ ይምረጡ:",
@@ -268,7 +269,8 @@ Contact our support team using the 📞 Contact Support button!""",
         'out_of_stock_btn': "❌ አልቋል",
         'back_to_catalog': "⬅️ ወደ ካታሎግ ተመለስ",
         'edit_product_btn': "✏️ አርትዕ",
-        'delete_product_btn': "🗑️ ሰርዝ"
+        'delete_product_btn': "🗑️ ሰርዝ",
+        'broadcast_msg_btn': "📢 የብሮድካስት መልእክት"
     }
 }
 

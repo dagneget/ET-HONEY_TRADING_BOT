@@ -50,6 +50,7 @@ ADMIN_EXPORT_ORDERS_PATTERN = r'^(📥 Export Orders|📥 ትዕዛዞችን ላ
 ADMIN_VIEW_ALL_TICKETS_PATTERN = r'^(View All|ሁሉንም ይመልከቱ)$'
 ADMIN_VIEW_PENDING_TICKETS_PATTERN = r'^(Pending|በመጠባበቅ ላይ)$'
 ADMIN_VIEW_CLOSED_TICKETS_PATTERN = r'^(Closed|ተዘግቷል)$'
+ADMIN_BROADCAST_PATTERN = r'^(📢 Broadcast Message|📢 የብሮድካስት መልእክት)$'
 
 # Load environment variables
 from pathlib import Path
@@ -461,9 +462,11 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.callback_query.message.reply_text("Welcome to the Admin Dashboard! Please choose an option:", reply_markup=reply_markup)
 
 async def admin_broadcast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.message.reply_text("📢 *Broadcast Message*\n\nPlease enter the message you want to send to all users who have alerts enabled:", parse_mode='Markdown')
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text("📢 *Broadcast Message*\n\nPlease enter the message you want to send to all users who have alerts enabled:", parse_mode='Markdown')
+    else:
+        await update.message.reply_text("📢 *Broadcast Message*\n\nPlease enter the message you want to send to all users who have alerts enabled:", parse_mode='Markdown')
     return BROADCAST_MESSAGE
 
 async def admin_broadcast_receive_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -555,7 +558,7 @@ async def admin_dashboard_text_handler(update: Update, context: ContextTypes.DEF
     keyboard = [
         [get_text(lang, 'dashboard_overview'), get_text(lang, 'manage_products')],
         [get_text(lang, 'user_messages'), get_text(lang, 'user_management')],
-        [get_text(lang, 'reports_logs')],
+        [get_text(lang, 'reports_logs'), get_text(lang, 'broadcast_msg_btn')],
         [get_text(lang, 'admin_back')]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -3098,7 +3101,10 @@ def main():
     
     # Broadcast Conversation Handler
     broadcast_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_broadcast_start, pattern='^admin_broadcast_start$')],
+        entry_points=[
+            CallbackQueryHandler(admin_broadcast_start, pattern='^admin_broadcast_start$'),
+            MessageHandler(filters.Regex(ADMIN_BROADCAST_PATTERN), admin_broadcast_start)
+        ],
         states={
             BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_broadcast_receive_message)],
             BROADCAST_CONFIRM: [CallbackQueryHandler(admin_broadcast_confirm, pattern='^broadcast_(send|cancel)$')]
