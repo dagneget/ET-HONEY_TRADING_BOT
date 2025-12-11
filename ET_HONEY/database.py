@@ -77,6 +77,20 @@ def init_db():
     except sqlite3.OperationalError:
         pass
     
+    # Notification columns
+    try:
+        c.execute("ALTER TABLE customers ADD COLUMN notify_orders INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE customers ADD COLUMN notify_products INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE customers ADD COLUMN notify_alerts INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+    
     # Messages Table
     c.execute('''
         CREATE TABLE IF NOT EXISTS messages (
@@ -723,4 +737,43 @@ def update_ticket_attachment_path(ticket_id, attachment_path):
     c = conn.cursor()
     c.execute('UPDATE tickets SET attachment_path = ? WHERE id = ?', (attachment_path, ticket_id))
     conn.commit()
+    conn.close()
+
+def get_users_for_notification(notification_type='notify_alerts'):
+    """Returns list of telegram_ids for users who have opted in for the specific notification type."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    valid_types = ['notify_orders', 'notify_products', 'notify_alerts']
+    if notification_type not in valid_types:
+        notification_type = 'notify_alerts'
+        
+    query = f"SELECT telegram_id FROM customers WHERE {notification_type} = 1 AND status != 'Deleted'"
+    c.execute(query)
+    users = c.fetchall()
+    conn.close()
+    return [user[0] for user in users if user[0]]
+
+def update_notification_preferences(telegram_id, notify_orders=None, notify_products=None, notify_alerts=None):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    updates = []
+    params = []
+    
+    if notify_orders is not None:
+        updates.append("notify_orders = ?")
+        params.append(notify_orders)
+    if notify_products is not None:
+        updates.append("notify_products = ?")
+        params.append(notify_products)
+    if notify_alerts is not None:
+        updates.append("notify_alerts = ?")
+        params.append(notify_alerts)
+        
+    if updates:
+        params.append(telegram_id)
+        query = f"UPDATE customers SET {', '.join(updates)} WHERE telegram_id = ?"
+        c.execute(query, params)
+        conn.commit()
     conn.close()

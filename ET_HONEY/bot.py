@@ -97,6 +97,9 @@ ADD_PRODUCT_NAME, ADD_PRODUCT_DESC, ADD_PRODUCT_PRICE, ADD_PRODUCT_STOCK, ADD_PR
 # Edit Product States
 EDIT_PRODUCT_SELECT, EDIT_PRODUCT_FIELD, EDIT_PRODUCT_NAME, EDIT_PRODUCT_DESC, EDIT_PRODUCT_PRICE, EDIT_PRODUCT_STOCK, EDIT_PRODUCT_IMAGE = range(87, 94)
 
+# Broadcast States
+BROADCAST_MESSAGE, BROADCAST_CONFIRM = range(100, 102)
+
 async def post_init(application: Application):
     """Called after the application is initialized."""
     database.init_db()
@@ -390,6 +393,52 @@ async def admin_resolve_ticket_callback(update: Update, context: ContextTypes.DE
     # Refresh view
     await admin_view_ticket(update, context)
 
+async def admin_process_order_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles admin approval/rejection of orders and notifies user."""
+    query = update.callback_query
+    await query.answer()
+    
+    # data format: admin:action:orders:id
+    try:
+        parts = query.data.split(':')
+        action = parts[1] # 'approve' or 'reject'
+        order_id = int(parts[3])
+        
+        new_status = 'Approved' if action == 'approve' else 'Rejected'
+        database.update_order_status(order_id, new_status)
+        
+        # Update Admin Message
+        icon = "✅" if new_status == 'Approved' else "❌"
+        # We can't edit text easily to append without fetching full text, but we can edit to show status
+        # Or just append status line if possible.
+        # Simplest is to edit the buttons away and add a status line.
+        await query.message.edit_reply_markup(reply_markup=None)
+        await query.message.reply_text(f"{icon} Order #{order_id} marked as {new_status}.", quote=True)
+        
+        # Notify User
+        order = database.get_order(order_id)
+        if order:
+            user_id = order['user_id']
+            customer = database.get_customer_by_telegram_id(user_id)
+            
+            should_notify = True
+            if customer and 'notify_orders' in customer.keys() and customer['notify_orders'] == 0:
+                should_notify = False
+            
+            if should_notify:
+                msg_key = 'order_approved' if new_status == 'Approved' else 'order_rejected'
+                user_lang = customer['language'] if customer and 'language' in customer.keys() else 'en'
+                message_text = get_text(user_lang, msg_key, id=order_id)
+                
+                try:
+                    await context.bot.send_message(chat_id=user_id, text=message_text, parse_mode='Markdown')
+                except Exception as e:
+                    logging.error(f"Failed to notify user {user_id} about order {order_id}: {e}")
+                    
+    except Exception as e:
+        logging.error(f"Error in admin_process_order_callback: {e}")
+        await query.message.reply_text("❌ Error processing order action.")
+
 async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Displays the admin dashboard menu."""
     username = update.effective_user.username
@@ -403,12 +452,61 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         [InlineKeyboardButton("✉️ User Messages", callback_data='admin_user_messages')],
         [InlineKeyboardButton("👥 User Management", callback_data='admin_user_management')],
         [InlineKeyboardButton("📈 Reports & Logs", callback_data='admin_reports_logs')],
+        [InlineKeyboardButton("📢 Broadcast Message", callback_data='admin_broadcast_start')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     if update.message:
         await update.message.reply_text("Welcome to the Admin Dashboard! Please choose an option:", reply_markup=reply_markup)
     elif update.callback_query:
         await update.callback_query.message.reply_text("Welcome to the Admin Dashboard! Please choose an option:", reply_markup=reply_markup)
+
+async def admin_broadcast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("📢 *Broadcast Message*\n\nPlease enter the message you want to send to all users who have alerts enabled:", parse_mode='Markdown')
+    return BROADCAST_MESSAGE
+
+async def admin_broadcast_receive_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    context.user_data['broadcast_message'] = text
+    
+    preview = f"📢 *Broadcast Preview*\n\n{text}\n\nDo you want to send this message?"
+    keyboard = [
+        [InlineKeyboardButton("✅ Send Now", callback_data='broadcast_send')],
+        [InlineKeyboardButton("❌ Cancel", callback_data='broadcast_cancel')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(preview, reply_markup=reply_markup, parse_mode='Markdown')
+    return BROADCAST_CONFIRM
+
+async def admin_broadcast_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == 'broadcast_cancel':
+        await query.message.edit_text("Broadcast cancelled.")
+        return ConversationHandler.END
+        
+    message = context.user_data.get('broadcast_message')
+    if not message:
+         await query.message.edit_text("Error: No message content.")
+         return ConversationHandler.END
+         
+    # Send to users
+    users = database.get_users_for_notification('notify_alerts')
+    count = 0
+    
+    status_msg = await query.message.reply_text(f"⏳ Sending broadcast to {len(users)} users...")
+    
+    for user_id in users:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=f"📢 *Announcement*\n\n{message}", parse_mode='Markdown')
+            count += 1
+        except Exception as e:
+            logging.error(f"Failed to broadcast to {user_id}: {e}")
+            
+    await status_msg.edit_text(f"✅ Broadcast sent successfully to {count} users.")
+    return ConversationHandler.END
 
 async def setadmin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Temporarily sets a user as admin by username."""
@@ -2116,9 +2214,8 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     keyboard = [
-        [InlineKeyboardButton("🛒 My Orders", callback_data='my_orders')],
-        [InlineKeyboardButton("✉️ My Tickets", callback_data='my_tickets')],
-        [InlineKeyboardButton("✍️ My Feedback", callback_data='my_feedback')],
+        [InlineKeyboardButton("🛒 My Orders", callback_data='my_orders'), InlineKeyboardButton("🔔 Notifications", callback_data='my_notifications')],
+        [InlineKeyboardButton("✉️ My Tickets", callback_data='my_tickets'), InlineKeyboardButton("✍️ My Feedback", callback_data='my_feedback')],
         [InlineKeyboardButton("❌ Delete Account", callback_data='delete_account_init')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -2218,6 +2315,67 @@ async def my_feedback_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         text += f"🔹 {f['rating']}⭐: {f['comment']} - {f['status']}\n"
         
     await query.message.reply_text(text, parse_mode='Markdown')
+
+async def my_notifications_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    customer = database.get_customer_by_telegram_id(user_id)
+    
+    # Check values (default to 1 if None)
+    notify_orders = customer['notify_orders'] if customer['notify_orders'] is not None else 1
+    notify_products = customer['notify_products'] if customer['notify_products'] is not None else 1
+    notify_alerts = customer['notify_alerts'] if customer['notify_alerts'] is not None else 1
+    
+    icon_orders = "✅" if notify_orders else "❌"
+    icon_products = "✅" if notify_products else "❌"
+    icon_alerts = "✅" if notify_alerts else "❌"
+    
+    text = (
+        "🔔 *Notification Settings*\n\n"
+        "Customize your notification preferences:\n\n"
+        f"🛒 *Order Updates*: {icon_orders}\n"
+        f"📦 *New Products*: {icon_products}\n"
+        f"🚨 *Alerts & Announcements*: {icon_alerts}\n"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton(f"Toggle Order Updates {icon_orders}", callback_data="toggle_notify:orders")],
+        [InlineKeyboardButton(f"Toggle Product Alerts {icon_products}", callback_data="toggle_notify:products")],
+        [InlineKeyboardButton(f"Toggle General Alerts {icon_alerts}", callback_data="toggle_notify:alerts")],
+        [InlineKeyboardButton("⬅️ Back to Profile", callback_data="profile")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if query.message.text.startswith("🔔"):
+         await query.message.edit_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+         await query.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def toggle_notification_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    type_key = query.data.split(':')[1] # orders, products, alerts
+    user_id = update.effective_user.id
+    customer = database.get_customer_by_telegram_id(user_id)
+    
+    if type_key == 'orders':
+        current = customer['notify_orders'] if customer['notify_orders'] is not None else 1
+        new_val = 0 if current else 1
+        database.update_notification_preferences(user_id, notify_orders=new_val)
+    elif type_key == 'products':
+        current = customer['notify_products'] if customer['notify_products'] is not None else 1
+        new_val = 0 if current else 1
+        database.update_notification_preferences(user_id, notify_products=new_val)
+    elif type_key == 'alerts':
+        current = customer['notify_alerts'] if customer['notify_alerts'] is not None else 1
+        new_val = 0 if current else 1
+        database.update_notification_preferences(user_id, notify_alerts=new_val)
+        
+    # Refresh view
+    await my_notifications_callback(update, context)
 
 # --- Order Conversation Handlers ---
 
@@ -2936,7 +3094,19 @@ def main():
     application.add_handler(CallbackQueryHandler(admin_user_action_handler, pattern='^admin_act_user:.+$'))
     # application.add_handler(CallbackQueryHandler(admin_reply_to_ticket_callback, pattern='^admin_reply_to_ticket:\\d+$')) # Replaced by ConversationHandler
     application.add_handler(CallbackQueryHandler(admin_resolve_ticket_callback, pattern='^admin_resolve_ticket:\\d+$'))
+    application.add_handler(CallbackQueryHandler(admin_process_order_callback, pattern='^admin:(approve|reject):orders:\\d+$'))
     
+    # Broadcast Conversation Handler
+    broadcast_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_broadcast_start, pattern='^admin_broadcast_start$')],
+        states={
+            BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_broadcast_receive_message)],
+            BROADCAST_CONFIRM: [CallbackQueryHandler(admin_broadcast_confirm, pattern='^broadcast_(send|cancel)$')]
+        },
+        fallbacks=navigation_handlers,
+    )
+    application.add_handler(broadcast_handler)
+
     # Admin Reply Conversation Handler
     admin_reply_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_reply_to_ticket_start, pattern='^admin_reply_to_ticket:\\d+$')],
@@ -2954,6 +3124,8 @@ def main():
     application.add_handler(CallbackQueryHandler(my_tickets_callback, pattern='^my_tickets$'))
     application.add_handler(CallbackQueryHandler(view_ticket_callback, pattern='^view_ticket:\\d+$'))
     application.add_handler(CallbackQueryHandler(my_feedback_callback, pattern='^my_feedback$'))
+    application.add_handler(CallbackQueryHandler(my_notifications_callback, pattern='^my_notifications$'))
+    application.add_handler(CallbackQueryHandler(toggle_notification_callback, pattern='^toggle_notify:.+$'))
 
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('menu', start))
