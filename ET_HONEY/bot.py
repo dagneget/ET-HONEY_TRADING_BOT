@@ -94,6 +94,9 @@ ADMIN_REPLY = 70
 # States for Adding Product
 ADD_PRODUCT_NAME, ADD_PRODUCT_DESC, ADD_PRODUCT_PRICE, ADD_PRODUCT_STOCK, ADD_PRODUCT_QUANTITIES, ADD_PRODUCT_IMAGE = range(80, 86)
 
+# Edit Product States
+EDIT_PRODUCT_SELECT, EDIT_PRODUCT_FIELD, EDIT_PRODUCT_NAME, EDIT_PRODUCT_DESC, EDIT_PRODUCT_PRICE, EDIT_PRODUCT_STOCK, EDIT_PRODUCT_IMAGE = range(86, 93)
+
 async def post_init(application: Application):
     """Called after the application is initialized."""
     database.init_db()
@@ -2274,6 +2277,83 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = get_user_lang(update, context) or 'en'
     text = get_text(lang, 'help_text')
     await update.message.reply_text(text, parse_mode='Markdown')
+
+
+async def browse_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show product catalog to users."""
+    if not await check_registration_status(update, context):
+        return
+    
+    lang = get_user_lang(update, context) or 'en'
+    products = database.get_products_available()
+    
+    if not products:
+        text = "No products available at the moment."
+        if update.callback_query:
+            await update.callback_query.message.reply_text(text)
+        else:
+            await update.message.reply_text(text)
+        return
+    
+    keyboard = []
+    for product in products:
+        button_text = f"🍯 {product['name']} - ${product['price']:.2f}"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"view_product:{product['id']}")])
+    
+    keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    text = "📚 Product Catalog"
+    
+    if update.callback_query:
+        await update.callback_query.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def view_product_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show detailed product information."""
+    query = update.callback_query
+    await query.answer()
+    
+    product_id = int(query.data.split(':')[1])
+    product = database.get_product(product_id)
+    
+    if not product:
+        await query.message.reply_text("Product not found.")
+        return
+    
+    lang = get_user_lang(update, context) or 'en'
+    
+    text = (
+        f"**{product['name']}**\n\n"
+        f"{product['description'] or 'No description available.'}\n\n"
+        f"💰 *Price:* ${product['price']:.2f}\n"
+        f"📦 *In Stock:* {product['stock']} units"
+    )
+    
+    keyboard = []
+    if product['stock'] > 0:
+        keyboard.append([InlineKeyboardButton("🛒 Order This Product", callback_data=f"order_product:{product_id}")])
+    else:
+        keyboard.append([InlineKeyboardButton("❌ Out of Stock", callback_data="no_action")])
+    
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Catalog", callback_data="browse_catalog")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if product['image_path']:
+        try:
+            await query.message.reply_photo(
+                photo=open(product['image_path'], 'rb'),
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            return
+        except Exception as e:
+            logging.error(f"Failed to send product image: {e}")
+    
+    await query.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def blog_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for the blog button."""

@@ -169,6 +169,61 @@ def delete_product(product_id):
     conn.commit()
     conn.close()
 
+def update_product(product_id, name=None, description=None, price=None, stock=None, image_path=None):
+    """Update product details. Only updates provided fields."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    updates = []
+    params = []
+    
+    if name is not None:
+        updates.append("name = ?")
+        params.append(name)
+    if description is not None:
+        updates.append("description = ?")
+        params.append(description)
+    if price is not None:
+        updates.append("price = ?")
+        params.append(price)
+    if stock is not None:
+        updates.append("stock = ?")
+        params.append(stock)
+    if image_path is not None:
+        updates.append("image_path = ?")
+        params.append(image_path)
+    
+    if updates:
+        params.append(product_id)
+        query = f"UPDATE products SET {', '.join(updates)} WHERE id = ?"
+        c.execute(query, params)
+        conn.commit()
+    
+    conn.close()
+    logging.info(f"Updated product ID {product_id}")
+
+def get_products_available():
+    """Get only products with stock > 0."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM products WHERE stock > 0 ORDER BY name')
+    products = c.fetchall()
+    conn.close()
+    return products
+
+def search_products(query):
+    """Search products by name or description."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    search_term = f"%{query}%"
+    c.execute('SELECT * FROM products WHERE name LIKE ? OR description LIKE ? ORDER BY name', 
+              (search_term, search_term))
+    products = c.fetchall()
+    conn.close()
+    return products
+
 def update_product_stock(product_id, new_stock):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
