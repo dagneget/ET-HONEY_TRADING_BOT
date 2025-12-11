@@ -23,6 +23,9 @@ def init_db():
             customer_type TEXT,
             status TEXT DEFAULT 'Pending',
             is_admin INTEGER DEFAULT 0,
+            notify_orders INTEGER DEFAULT 1,
+            notify_products INTEGER DEFAULT 1,
+            notify_alerts INTEGER DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -67,6 +70,10 @@ def init_db():
         pass
     try:
         c.execute("ALTER TABLE products ADD COLUMN available_quantities TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'General'")
     except sqlite3.OperationalError:
         pass
     
@@ -125,13 +132,13 @@ def init_db():
     conn.commit()
     conn.close()
 
-def add_product(name, description, price, stock, image_path=None, available_quantities=None):
+def add_product(name, description, price, stock, image_path=None, available_quantities=None, category='General'):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO products (name, description, price, stock, image_path, available_quantities)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (name, description, price, stock, image_path, available_quantities))
+        INSERT INTO products (name, description, price, stock, image_path, available_quantities, category)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (name, description, price, stock, image_path, available_quantities, category))
     product_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -169,7 +176,7 @@ def delete_product(product_id):
     conn.commit()
     conn.close()
 
-def update_product(product_id, name=None, description=None, price=None, stock=None, image_path=None):
+def update_product(product_id, name=None, description=None, price=None, stock=None, image_path=None, category=None):
     """Update product details. Only updates provided fields."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -192,6 +199,9 @@ def update_product(product_id, name=None, description=None, price=None, stock=No
     if image_path is not None:
         updates.append("image_path = ?")
         params.append(image_path)
+    if category is not None:
+        updates.append("category = ?")
+        params.append(category)
     
     if updates:
         params.append(product_id)
@@ -220,6 +230,63 @@ def search_products(query):
     search_term = f"%{query}%"
     c.execute('SELECT * FROM products WHERE name LIKE ? OR description LIKE ? ORDER BY name', 
               (search_term, search_term))
+    products = c.fetchall()
+    conn.close()
+    return products
+
+def get_products_by_category(category):
+    """Get products filtered by category."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute('SELECT * FROM products WHERE category = ? AND stock > 0 ORDER BY name', (category,))
+    products = c.fetchall()
+    conn.close()
+    return products
+
+def get_all_categories():
+    """Get list of distinct product categories."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT DISTINCT category FROM products WHERE category IS NOT NULL ORDER BY category')
+    categories = [row[0] for row in c.fetchall()]
+    conn.close()
+    return categories if categories else ['General']
+
+def search_products_advanced(query=None, category=None, min_price=None, max_price=None, sort_by='name', sort_order='asc'):
+    """Advanced product search with filters and sorting."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    
+    sql = 'SELECT * FROM products WHERE stock > 0'
+    params = []
+    
+    if query:
+        sql += ' AND (name LIKE ? OR description LIKE ?)'
+        search_term = f'%{query}%'
+        params.extend([search_term, search_term])
+    
+    if category:
+        sql += ' AND category = ?'
+        params.append(category)
+    
+    if min_price is not None:
+        sql += ' AND price >= ?'
+        params.append(min_price)
+    
+    if max_price is not None:
+        sql += ' AND price <= ?'
+        params.append(max_price)
+    
+    # Sorting
+    valid_sort_fields = ['name', 'price', 'stock', 'created_at']
+    if sort_by not in valid_sort_fields:
+        sort_by = 'name'
+    order = 'DESC' if sort_order.lower() == 'desc' else 'ASC'
+    sql += f' ORDER BY {sort_by} {order}'
+    
+    c.execute(sql, params)
     products = c.fetchall()
     conn.close()
     return products

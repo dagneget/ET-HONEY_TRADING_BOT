@@ -92,10 +92,10 @@ RETURNING_USER_OPTIONS = 60
 ADMIN_REPLY = 70
 
 # States for Adding Product
-ADD_PRODUCT_NAME, ADD_PRODUCT_DESC, ADD_PRODUCT_PRICE, ADD_PRODUCT_STOCK, ADD_PRODUCT_QUANTITIES, ADD_PRODUCT_IMAGE = range(80, 86)
+ADD_PRODUCT_NAME, ADD_PRODUCT_DESC, ADD_PRODUCT_PRICE, ADD_PRODUCT_STOCK, ADD_PRODUCT_QUANTITIES, ADD_PRODUCT_CATEGORY, ADD_PRODUCT_IMAGE = range(80, 87)
 
 # Edit Product States
-EDIT_PRODUCT_SELECT, EDIT_PRODUCT_FIELD, EDIT_PRODUCT_NAME, EDIT_PRODUCT_DESC, EDIT_PRODUCT_PRICE, EDIT_PRODUCT_STOCK, EDIT_PRODUCT_IMAGE = range(86, 93)
+EDIT_PRODUCT_SELECT, EDIT_PRODUCT_FIELD, EDIT_PRODUCT_NAME, EDIT_PRODUCT_DESC, EDIT_PRODUCT_PRICE, EDIT_PRODUCT_STOCK, EDIT_PRODUCT_IMAGE = range(87, 94)
 
 async def post_init(application: Application):
     """Called after the application is initialized."""
@@ -1558,10 +1558,16 @@ async def admin_list_products(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
 
         text = "📋 *Product List*\n\n"
-        keyboard = []
-        
         for p in products:
-            keyboard.append([InlineKeyboardButton(f"🗑 Delete {p['name']} - ${p['price']}", callback_data=f"admin_delete_product:{p['id']}")])
+            cat = p['category'] if 'category' in p.keys() and p['category'] else 'General'
+            text += f"• {p['name']} - ${p['price']:.2f} (📁 {cat})\n"
+        
+        keyboard = []
+        for p in products:
+            keyboard.append([
+                InlineKeyboardButton(f"✏️ Edit {p['name']}", callback_data=f"edit_prod:{p['id']}"),
+                InlineKeyboardButton(f"🗑️ Delete", callback_data=f"admin_delete_product:{p['id']}")
+            ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         await reply_method(text, reply_markup=reply_markup, parse_mode='Markdown')
@@ -1629,6 +1635,19 @@ async def receive_add_product_quantities(update: Update, context: ContextTypes.D
     else:
         context.user_data['new_product_quantities'] = text
 
+    # Get existing categories for suggestions
+    categories = database.get_all_categories()
+    category_text = ', '.join(categories) if categories else 'General'
+    
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(f"Please enter the *Product Category* (e.g., {category_text}) or type a new one:", reply_markup=reply_markup, parse_mode='Markdown')
+    return ADD_PRODUCT_CATEGORY
+
+async def receive_add_product_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    context.user_data['new_product_category'] = text if text else 'General'
+
     keyboard = [[InlineKeyboardButton("Skip Image", callback_data='skip_image')], [InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Please upload a *Product Image* (optional) or click Skip:", reply_markup=reply_markup, parse_mode='Markdown')
@@ -1664,10 +1683,11 @@ async def finalize_add_product(update: Update, context: ContextTypes.DEFAULT_TYP
     stock = context.user_data['new_product_stock']
     image = context.user_data['new_product_image']
     quantities = context.user_data.get('new_product_quantities')
+    category = context.user_data.get('new_product_category', 'General')
     
-    database.add_product(name, desc, price, stock, image, quantities)
+    database.add_product(name, desc, price, stock, image, quantities, category)
     
-    message = "✅ *Product Added Successfully!*\n\n"
+    message = f"✅ *Product Added Successfully!*\n\n📁 Category: {category}\n🍯 Name: {name}\n💰 Price: ${price:.2f}\n📦 Stock: {stock}"
     if update.callback_query:
         await update.callback_query.message.reply_text(message, parse_mode='Markdown')
     else:
@@ -1685,10 +1705,190 @@ async def admin_delete_product_handler(update: Update, context: ContextTypes.DEF
     await query.message.reply_text("🗑 Product deleted.")
     await admin_list_products(update, context)
 
+# --- Edit Product Handlers ---
+
+async def start_edit_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start edit product flow - show product list."""
+    if update.callback_query:
+        await update.callback_query.answer()
+        user = update.effective_user
+        reply_method = update.callback_query.message.reply_text
+    else:
+        user = update.effective_user
+        reply_method = update.message.reply_text
+
+    if not await is_admin(user.username):
+        await reply_method("You are not authorized.")
+        return ConversationHandler.END
+
+    products = database.get_all_products()
+    if not products:
+        await reply_method("No products to edit.")
+        return ConversationHandler.END
+
+    keyboard = []
+    for p in products:
+        keyboard.append([InlineKeyboardButton(f"✏️ {p['name']} - ${p['price']}", callback_data=f"edit_prod:{p['id']}")])
+    
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await reply_method("✏️ *Edit Product*\n\nSelect a product to edit:", reply_markup=reply_markup, parse_mode='Markdown')
+    return EDIT_PRODUCT_SELECT
+
+async def select_edit_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show available fields to edit for selected product."""
+    query = update.callback_query
+    await query.answer()
+    
+    product_id = int(query.data.split(':')[1])
+    product = database.get_product(product_id)
+    
+    if not product:
+        await query.message.reply_text("Product not found.")
+        return ConversationHandler.END
+    
+    context.user_data['edit_product_id'] = product_id
+    
+    info = (
+        f"✏️ *Editing: {product['name']}*\n\n"
+        f"📁 Category: {product['category'] or 'General'}\n"
+        f"📝 Description: {product['description'][:50]}...\n" if product['description'] and len(product['description']) > 50 else f"📝 Description: {product['description'] or 'None'}\n"
+        f"💰 Price: ${product['price']:.2f}\n"
+        f"📦 Stock: {product['stock']}\n"
+        f"🖼 Image: {'Yes' if product['image_path'] else 'No'}\n\n"
+        f"Select field to edit:"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("📝 Name", callback_data="field:name"), InlineKeyboardButton("📋 Description", callback_data="field:desc")],
+        [InlineKeyboardButton("💰 Price", callback_data="field:price"), InlineKeyboardButton("📦 Stock", callback_data="field:stock")],
+        [InlineKeyboardButton("📁 Category", callback_data="field:category"), InlineKeyboardButton("🖼 Image", callback_data="field:image")],
+        [InlineKeyboardButton("⬅️ Back to Product List", callback_data="edit_back")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.message.edit_text(info, reply_markup=reply_markup, parse_mode='Markdown')
+    return EDIT_PRODUCT_FIELD
+
+async def handle_edit_field_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle field selection and prompt for new value."""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "edit_back":
+        return await start_edit_product(update, context)
+    
+    field = query.data.split(':')[1]
+    context.user_data['edit_field'] = field
+    
+    product_id = context.user_data['edit_product_id']
+    product = database.get_product(product_id)
+    
+    prompts = {
+        'name': f"Current name: *{product['name']}*\n\nEnter new name:",
+        'desc': f"Current description: {product['description'] or 'None'}\n\nEnter new description:",
+        'price': f"Current price: *${product['price']:.2f}*\n\nEnter new price:",
+        'stock': f"Current stock: *{product['stock']}*\n\nEnter new stock quantity:",
+        'category': f"Current category: *{product['category'] or 'General'}*\n\nEnter new category:",
+        'image': "Upload a new product image:"
+    }
+    
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.message.edit_text(prompts.get(field, "Enter new value:"), reply_markup=reply_markup, parse_mode='Markdown')
+    
+    if field == 'name':
+        return EDIT_PRODUCT_NAME
+    elif field == 'desc':
+        return EDIT_PRODUCT_DESC
+    elif field == 'price':
+        return EDIT_PRODUCT_PRICE
+    elif field == 'stock':
+        return EDIT_PRODUCT_STOCK
+    elif field == 'category':
+        return EDIT_PRODUCT_FIELD  # Reuse for category text input
+    elif field == 'image':
+        return EDIT_PRODUCT_IMAGE
+    
+    return EDIT_PRODUCT_FIELD
+
+async def receive_edit_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Update product name."""
+    new_value = update.message.text
+    product_id = context.user_data['edit_product_id']
+    database.update_product(product_id, name=new_value)
+    await update.message.reply_text(f"✅ Product name updated to: *{new_value}*", parse_mode='Markdown')
+    return ConversationHandler.END
+
+async def receive_edit_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Update product description."""
+    new_value = update.message.text
+    product_id = context.user_data['edit_product_id']
+    database.update_product(product_id, description=new_value)
+    await update.message.reply_text("✅ Product description updated.", parse_mode='Markdown')
+    return ConversationHandler.END
+
+async def receive_edit_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Update product price."""
+    try:
+        new_value = float(update.message.text)
+        product_id = context.user_data['edit_product_id']
+        database.update_product(product_id, price=new_value)
+        await update.message.reply_text(f"✅ Product price updated to: *${new_value:.2f}*", parse_mode='Markdown')
+        return ConversationHandler.END
+    except ValueError:
+        await update.message.reply_text("Invalid price. Please enter a number:")
+        return EDIT_PRODUCT_PRICE
+
+async def receive_edit_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Update product stock."""
+    if not update.message.text.isdigit():
+        await update.message.reply_text("Invalid stock. Please enter a whole number:")
+        return EDIT_PRODUCT_STOCK
+    
+    new_value = int(update.message.text)
+    product_id = context.user_data['edit_product_id']
+    database.update_product(product_id, stock=new_value)
+    await update.message.reply_text(f"✅ Product stock updated to: *{new_value}*", parse_mode='Markdown')
+    return ConversationHandler.END
+
+async def receive_edit_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Update product category."""
+    new_value = update.message.text.strip()
+    product_id = context.user_data['edit_product_id']
+    
+    database.update_product(product_id, category=new_value)
+    
+    await update.message.reply_text(f"✅ Product category updated to: *{new_value}*", parse_mode='Markdown')
+    return ConversationHandler.END
+
+async def receive_edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Update product image."""
+    photo_file = await update.message.photo[-1].get_file()
+    ext = os.path.splitext(photo_file.file_path)[1] or ".jpg"
+    
+    upload_dir = os.path.join('uploads', 'products')
+    os.makedirs(upload_dir, exist_ok=True)
+    filename = f"prod_{uuid.uuid4()}{ext}"
+    file_path = os.path.join(upload_dir, filename)
+    
+    await photo_file.download_to_drive(file_path)
+    
+    product_id = context.user_data['edit_product_id']
+    database.update_product(product_id, image_path=file_path)
+    
+    await update.message.reply_text("✅ Product image updated.", parse_mode='Markdown')
+    return ConversationHandler.END
+
 async def user_reply_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles user messages outside of specific flows (checking for open tickets)."""
     user_id = update.effective_user.id
     message_text = update.message.text
+    
+    # Check for product search first
+    if await handle_product_search(update, context):
+        return
     
     # Check for open ticket
     ticket = database.get_active_ticket(user_id)
@@ -2028,6 +2228,35 @@ async def start_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if update.callback_query:
         query = update.callback_query
         await query.answer()
+        
+        # Check if triggered by "Order This Product" from catalog
+        if query.data.startswith('order_product:'):
+            product_id = int(query.data.split(':')[1])
+            product = database.get_product(product_id)
+            
+            if product:
+                context.user_data['order_product'] = product['name']
+                context.user_data['order_product_price'] = product['price']
+                
+                # Check for available quantities
+                if product['available_quantities']:
+                    quantities = [q.strip() for q in product['available_quantities'].split(',')]
+                    keyboard = []
+                    row = []
+                    for q in quantities:
+                        row.append(InlineKeyboardButton(q, callback_data=f"qty:{q}"))
+                        if len(row) == 2:
+                            keyboard.append(row)
+                            row = []
+                    if row:
+                        keyboard.append(row)
+                    
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await query.message.reply_text(f"🛒 *Ordering: {product['name']}*\n\nPlease select a quantity:", reply_markup=reply_markup, parse_mode='Markdown')
+                else:
+                    await query.message.reply_text(f"🛒 *Ordering: {product['name']}*\n\nHow many would you like to order? (Please enter a number):", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data='cancel')]]), parse_mode='Markdown')
+                
+                return QUANTITY
 
     # Fetch products from DB
     products = database.get_all_products()
@@ -2280,35 +2509,147 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def browse_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show product catalog to users."""
+    """Show product catalog with categories, search, and sorting options."""
     if not await check_registration_status(update, context):
         return
     
     lang = get_user_lang(update, context) or 'en'
-    products = database.get_products_available()
     
-    if not products:
-        text = "No products available at the moment."
-        if update.callback_query:
-            await update.callback_query.message.reply_text(text)
-        else:
-            await update.message.reply_text(text)
-        return
+    # Get categories for filter buttons
+    categories = database.get_all_categories()
     
+    # Build category buttons (2 per row)
     keyboard = []
-    for product in products:
-        button_text = f"🍯 {product['name']} - ${product['price']:.2f}"
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"view_product:{product['id']}")])
+    row = []
+    for cat in categories:
+        row.append(InlineKeyboardButton(f"📁 {cat}", callback_data=f"cat:{cat}"))
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
     
+    # Add search and sort options
+    keyboard.append([InlineKeyboardButton("🔍 Search Products", callback_data="search_products")])
+    keyboard.append([
+        InlineKeyboardButton("💰 Sort by Price", callback_data="sort:price:asc"),
+        InlineKeyboardButton("🔤 Sort by Name", callback_data="sort:name:asc")
+    ])
+    keyboard.append([InlineKeyboardButton("📋 View All Products", callback_data="cat:all")])
     keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    text = "📚 Product Catalog"
+    text = "📚 *Product Catalog*\n\nBrowse by category, search, or view all:"
     
     if update.callback_query:
-        await update.callback_query.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.callback_query.answer()
+        try:
+            await update.callback_query.message.edit_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+        except:
+            await update.callback_query.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
     else:
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def browse_by_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show products filtered by category."""
+    query = update.callback_query
+    await query.answer()
+    
+    category = query.data.split(':')[1]
+    
+    if category == 'all':
+        products = database.get_products_available()
+        title = "📋 *All Products*"
+    else:
+        products = database.get_products_by_category(category)
+        title = f"📁 *{category}*"
+    
+    if not products:
+        keyboard = [[InlineKeyboardButton("⬅️ Back to Catalog", callback_data="browse_catalog")]]
+        await query.message.edit_text(f"{title}\n\nNo products found in this category.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        return
+    
+    keyboard = []
+    for p in products:
+        btn_text = f"🍯 {p['name']} - ${p['price']:.2f}"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"view_product:{p['id']}")])
+    
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Catalog", callback_data="browse_catalog")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.message.edit_text(f"{title}\n\nSelect a product:", reply_markup=reply_markup, parse_mode='Markdown')
+
+async def sort_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show products sorted by specified field."""
+    query = update.callback_query
+    await query.answer()
+    
+    parts = query.data.split(':')
+    sort_by = parts[1]
+    sort_order = parts[2] if len(parts) > 2 else 'asc'
+    
+    products = database.search_products_advanced(sort_by=sort_by, sort_order=sort_order)
+    
+    sort_label = "Price ↑" if sort_by == 'price' and sort_order == 'asc' else \
+                 "Price ↓" if sort_by == 'price' else \
+                 "Name A-Z" if sort_by == 'name' and sort_order == 'asc' else "Name Z-A"
+    
+    if not products:
+        keyboard = [[InlineKeyboardButton("⬅️ Back to Catalog", callback_data="browse_catalog")]]
+        await query.message.edit_text("No products found.", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+    
+    keyboard = []
+    for p in products:
+        btn_text = f"🍯 {p['name']} - ${p['price']:.2f}"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"view_product:{p['id']}")])
+    
+    # Toggle sort order buttons
+    new_order = 'desc' if sort_order == 'asc' else 'asc'
+    keyboard.append([
+        InlineKeyboardButton(f"🔄 Reverse Order", callback_data=f"sort:{sort_by}:{new_order}")
+    ])
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Catalog", callback_data="browse_catalog")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.message.edit_text(f"📋 *Products (Sorted: {sort_label})*\n\nSelect a product:", reply_markup=reply_markup, parse_mode='Markdown')
+
+async def start_product_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Initiate product search."""
+    query = update.callback_query
+    await query.answer()
+    
+    context.user_data['awaiting_search'] = True
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="browse_catalog")]]
+    await query.message.edit_text("🔍 *Search Products*\n\nType your search query (product name or description):", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+async def handle_product_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle product search input."""
+    if not context.user_data.get('awaiting_search'):
+        return False
+    
+    context.user_data['awaiting_search'] = False
+    query_text = update.message.text
+    
+    products = database.search_products(query_text)
+    
+    if not products:
+        keyboard = [[InlineKeyboardButton("🔍 Search Again", callback_data="search_products")],
+                    [InlineKeyboardButton("⬅️ Back to Catalog", callback_data="browse_catalog")]]
+        await update.message.reply_text(f"No products found matching '{query_text}'.", reply_markup=InlineKeyboardMarkup(keyboard))
+        return True
+    
+    keyboard = []
+    for p in products:
+        btn_text = f"🍯 {p['name']} - ${p['price']:.2f}"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"view_product:{p['id']}")])
+    
+    keyboard.append([InlineKeyboardButton("🔍 Search Again", callback_data="search_products")])
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Catalog", callback_data="browse_catalog")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(f"🔍 *Search Results for '{query_text}'*\n\nFound {len(products)} product(s):", reply_markup=reply_markup, parse_mode='Markdown')
+    return True
 
 async def view_product_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show detailed product information."""
@@ -2383,8 +2724,8 @@ async def start_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [get_text(lang, 'order'), get_text(lang, 'feedback')],
+        ['📚 Browse Products', get_text(lang, 'profile')],
         [get_text(lang, 'complaint'), get_text(lang, 'inquiry')],
-        [get_text(lang, 'profile')],
         [get_text(lang, 'back_button')]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -2509,6 +2850,7 @@ def main():
     order_handler = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(start_order, pattern='^order$'),
+            CallbackQueryHandler(start_order, pattern='^order_product:\\d+$'),
             CommandHandler('order', start_order),
             MessageHandler(filters.Regex(ORDER_PATTERN), start_order)
         ],
@@ -2540,6 +2882,7 @@ def main():
             ADD_PRODUCT_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_price)],
             ADD_PRODUCT_STOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_stock)],
             ADD_PRODUCT_QUANTITIES: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_quantities)],
+            ADD_PRODUCT_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_product_category)],
             ADD_PRODUCT_IMAGE: [
                 MessageHandler(filters.PHOTO, receive_add_product_image),
                 CallbackQueryHandler(skip_add_product_image, pattern='^skip_image$')
@@ -2554,6 +2897,28 @@ def main():
     application.add_handler(support_handler)
     application.add_handler(feedback_handler)
     application.add_handler(add_product_handler)
+    
+    # Edit Product Conversation Handler
+    edit_product_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(select_edit_field, pattern='^edit_prod:\\d+$'),
+        ],
+        states={
+            EDIT_PRODUCT_SELECT: [CallbackQueryHandler(select_edit_field, pattern='^edit_prod:\\d+$')],
+            EDIT_PRODUCT_FIELD: [
+                CallbackQueryHandler(handle_edit_field_selection, pattern='^field:.+$'),
+                CallbackQueryHandler(start_edit_product, pattern='^edit_back$'),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_category),  # For category input
+            ],
+            EDIT_PRODUCT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_name)],
+            EDIT_PRODUCT_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_desc)],
+            EDIT_PRODUCT_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_price)],
+            EDIT_PRODUCT_STOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_stock)],
+            EDIT_PRODUCT_IMAGE: [MessageHandler(filters.PHOTO, receive_edit_image)],
+        },
+        fallbacks=navigation_handlers,
+    )
+    application.add_handler(edit_product_handler)
     
     application.add_handler(CallbackQueryHandler(admin_view_ticket, pattern='^admin_view_ticket:\\d+$'))
     application.add_handler(CallbackQueryHandler(admin_products_menu, pattern='^admin_products$'))
@@ -2598,6 +2963,14 @@ def main():
 
     application.add_handler(CommandHandler("setuser", set_user))
     application.add_handler(CommandHandler('help', help_command))
+    
+    # Product Catalog Handlers
+    application.add_handler(MessageHandler(filters.Regex('📚.*Products'), browse_products))
+    application.add_handler(CallbackQueryHandler(browse_products, pattern='^browse_catalog$'))
+    application.add_handler(CallbackQueryHandler(view_product_details, pattern='^view_product:\\d+$'))
+    application.add_handler(CallbackQueryHandler(browse_by_category, pattern='^cat:.+$'))
+    application.add_handler(CallbackQueryHandler(sort_products, pattern='^sort:.+$'))
+    application.add_handler(CallbackQueryHandler(start_product_search, pattern='^search_products$'))
     
     # Button Handlers
     application.add_handler(MessageHandler(filters.Regex(PROFILE_PATTERN), profile_command))
