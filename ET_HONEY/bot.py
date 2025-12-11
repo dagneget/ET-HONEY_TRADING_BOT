@@ -2530,13 +2530,13 @@ async def browse_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append(row)
     
     # Add search and sort options
-    keyboard.append([InlineKeyboardButton("🔍 Search Products", callback_data="search_products")])
+    keyboard.append([InlineKeyboardButton(get_text(lang, 'search_products_btn'), callback_data="search_products")])
     keyboard.append([
-        InlineKeyboardButton("💰 Sort by Price", callback_data="sort:price:asc"),
-        InlineKeyboardButton("🔤 Sort by Name", callback_data="sort:name:asc")
+        InlineKeyboardButton(get_text(lang, 'sort_price_btn'), callback_data="sort:price:asc"),
+        InlineKeyboardButton(get_text(lang, 'sort_name_btn'), callback_data="sort:name:asc")
     ])
-    keyboard.append([InlineKeyboardButton("📋 View All Products", callback_data="cat:all")])
-    keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="back_to_menu")])
+    keyboard.append([InlineKeyboardButton(get_text(lang, 'view_all_btn'), callback_data="cat:all")])
+    keyboard.append([InlineKeyboardButton(get_text(lang, 'back_button'), callback_data="back_to_menu")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = "📚 *Product Catalog*\n\nBrowse by category, search, or view all:"

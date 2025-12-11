@@ -122,7 +122,18 @@ This bot helps you order premium Ethiopian honey products easily.
 📧 *Need Help?*
 Contact our support team using the 📞 Contact Support button!""",
         'menu_button': "☰ Main Menu",
-        'skip': "Skip"
+        'skip': "Skip",
+        # Product Catalog
+        'browse_catalog_btn': "📚 Browse Products",
+        'search_products_btn': "🔍 Search Products",
+        'sort_price_btn': "💰 Sort by Price",
+        'sort_name_btn': "🔤 Sort by Name",
+        'view_all_btn': "📋 View All Products",
+        'order_product_btn': "🛒 Order This Product",
+        'out_of_stock_btn': "❌ Out of Stock",
+        'back_to_catalog': "⬅️ Back to Catalog",
+        'edit_product_btn': "✏️ Edit",
+        'delete_product_btn': "🗑️ Delete"
     },
     'am': {
         'welcome': "እንኳን ወደ ኢትዮ ማር ንግድ በደህና መጡ! እባክዎ አማራጭ ይምረጡ:",
@@ -246,7 +257,18 @@ Contact our support team using the 📞 Contact Support button!""",
 📧 *እርዳታ ይፈልጋሉ?*
 📞 ድጋፍ ያግኙ የሚለውን ቁልፍ በመጠቀም የድጋፍ ቡድናችንን ያነጋግሩ!""",
         'menu_button': "☰ ዋና ሜኑ",
-        'skip': "ለጊዜው ይለፉ"
+        'skip': "ለጊዜው ይለፉ",
+        # Product Catalog (Amharic)
+        'browse_catalog_btn': "📚 ምርቶችን ያስሱ",
+        'search_products_btn': "🔍 ምርቶችን ይፈልጉ",
+        'sort_price_btn': "💰 በዋጋ ደርድር",
+        'sort_name_btn': "🔤 በስም ደርድር",
+        'view_all_btn': "📋 ሁሉንም ምርቶች ይመልከቱ",
+        'order_product_btn': "🛒 ይህን ምርት እዘዝ",
+        'out_of_stock_btn': "❌ አልቋል",
+        'back_to_catalog': "⬅️ ወደ ካታሎግ ተመለስ",
+        'edit_product_btn': "✏️ አርትዕ",
+        'delete_product_btn': "🗑️ ሰርዝ"
     }
 }
 

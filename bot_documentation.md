@@ -14,6 +14,7 @@ This document outlines the current functionalities of the Telegram bot and poten
 - **Enhanced Help System**: Completely redesigned Help feature with comprehensive bot functionality documentation in both English and Amharic
 - **Bilingual Support**: Full documentation of all features available in English and አማርኛ (Amharic)
 - **Improved Admin UX**: Streamlined admin dashboard navigation with consistent persistent keyboard menus
+- **Product Catalog Management**: Comprehensive system with Categories, Search, Sorting, and Admin Edit capabilities
 
 ## Current Features
 
@@ -31,8 +32,19 @@ The bot currently supports the following features, primarily managed through `bo
 - **Flow**: Collects `PRODUCT_NAME`, `QUANTITY`, `DELIVERY_ADDRESS`, and `PAYMENT_TYPE`.
 - **Admin Notification**: Admins are notified of new orders and can approve/reject them.
 
-### 3. Product Display with Images
-- **Feature**: When products are displayed to users, they now include images that were inserted by the admin, enhancing the user's browsing experience.
+### 3. Product Catalog Management
+- **Database**: Products have `name`, `description`, `price`, `stock`, `image_path`, `available_quantities`, and `category`.
+- **User Features**:
+  - **Browse by Category**: Filter products by distinct categories.
+  - **Search**: Users can search for products by name or description.
+  - **Sorting**: Sort products by Price or Name (Ascending/Descending).
+  - **Visuals**: Products display with images.
+  - **Direct Order**: "Order This Product" button initiates order flow for specific item.
+- **Admin Features**:
+  - **Add Product**: Multi-step flow to add products with all details including image and category.
+  - **Edit Product**: Modify any field (Name, Description, Price, Stock, Category, Image) of existing products.
+  - **Delete Product**: Remove products from the catalog.
+  - **Inventory**: Manage stock levels.
 
 ### 4. Feedback Submission
 - **Commands/Entry Points**: `/feedback`, CallbackQueryHandler for `feedback` pattern.
@@ -97,10 +109,10 @@ The bot currently supports the following features, primarily managed through `bo
 
 Based on the current structure and common bot requirements, the following features could be considered for future development:
 
-1.  **Product Catalog Management**: 
-    - Allow admins to add, edit, and remove products from a catalog.
-    - Enable users to browse products with more details (descriptions, prices, images).
-    - Integrate with the order system for easier product selection.
+1.  **Product Catalog Management**: ✅ **IMPLEMENTED**
+    - ✅ Admin: Add, Edit, Delete products with images and categories.
+    - ✅ User: Browse by category, Search, Sort, and View details.
+    - ✅ Integration: Direct ordering from catalog.
 
 2.  **Payment Gateway Integration**: 
     - Implement actual payment processing (e.g., Stripe, PayPal) instead of just `Cash` or `Transfer` options.
