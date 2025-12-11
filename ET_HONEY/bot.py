@@ -417,6 +417,23 @@ async def admin_process_order_callback(update: Update, context: ContextTypes.DEF
         action = parts[1] # 'approve' or 'reject'
         order_id = int(parts[3])
         
+        # Check if order is already processed
+        order = database.get_order(order_id)
+        if not order:
+            await query.message.reply_text("❌ Order not found.")
+            return
+
+        if order['status'] != 'Pending':
+            await query.answer(f"⚠️ Order already {order['status']}!", show_alert=True)
+            # Update the message to show current status if not already updated
+            icon = "✅" if order['status'] == 'Approved' else "❌"
+            try:
+                await query.message.edit_reply_markup(reply_markup=None)
+                await query.message.reply_text(f"{icon} Order #{order_id} is already {order['status']}.")
+            except Exception:
+                pass # Message might already be updated
+            return
+
         new_status = 'Approved' if action == 'approve' else 'Rejected'
         database.update_order_status(order_id, new_status)
         
@@ -429,26 +446,25 @@ async def admin_process_order_callback(update: Update, context: ContextTypes.DEF
         await query.message.reply_text(f"{icon} Order #{order_id} marked as {new_status}.")
         
         # Notify User
-        order = database.get_order(order_id)
-        if order:
-            user_id = order['user_id']
-            customer = database.get_customer_by_telegram_id(user_id)
+        # Order variable already fetched above, but status passed as arg or we use new_status
+        user_id = order['user_id']
+        customer = database.get_customer_by_telegram_id(user_id)
+        
+        should_notify = True
+        if customer:
+            customer_dict = dict(customer)
+            if customer_dict.get('notify_orders') == 0:
+                should_notify = False
+        
+        if should_notify:
+            msg_key = 'order_approved' if new_status == 'Approved' else 'order_rejected'
+            user_lang = customer_dict.get('language', 'en') if customer else 'en'
+            message_text = get_text(user_lang, msg_key, id=order_id)
             
-            should_notify = True
-            if customer:
-                customer_dict = dict(customer)
-                if customer_dict.get('notify_orders') == 0:
-                    should_notify = False
-            
-            if should_notify:
-                msg_key = 'order_approved' if new_status == 'Approved' else 'order_rejected'
-                user_lang = customer_dict.get('language', 'en') if customer else 'en'
-                message_text = get_text(user_lang, msg_key, id=order_id)
-                
-                try:
-                    await context.bot.send_message(chat_id=user_id, text=message_text, parse_mode='Markdown')
-                except Exception as e:
-                    logging.error(f"Failed to notify user {user_id} about order {order_id}: {e}")
+            try:
+                await context.bot.send_message(chat_id=user_id, text=message_text, parse_mode='Markdown')
+            except Exception as e:
+                logging.error(f"Failed to notify user {user_id} about order {order_id}: {e}")
                     
     except Exception as e:
         logging.error(f"Error in admin_process_order_callback: {e}")
