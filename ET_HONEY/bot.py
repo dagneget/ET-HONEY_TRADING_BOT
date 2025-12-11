@@ -1119,6 +1119,8 @@ async def start_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await update.message.reply_text(message)
         return ConversationHandler.END
 
+
+    lang = get_user_lang(update, context) or 'en'
     category = "Support"
     if update.callback_query:
         query = update.callback_query
