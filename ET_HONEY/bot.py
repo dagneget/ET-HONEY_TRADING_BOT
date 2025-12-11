@@ -54,6 +54,7 @@ ADMIN_VIEW_PENDING_TICKETS_PATTERN = r'^(Pending|በመጠባበቅ ላይ)$'
 ADMIN_VIEW_CLOSED_TICKETS_PATTERN = r'^(Closed|ተዘግቷል)$'
 ADMIN_BROADCAST_PATTERN = r'^(📢 Broadcast Message|📢 የብሮድካስት መልእክት)$'
 ADMIN_EXPORT_USERS_PATTERN = r'^(📥 Export Users|📥 ተጠቃሚዎችን ላክ \(Export\))$'
+SUBSCRIBE_PATTERN = r'^(📢 Subscribe to Channel|📢 ቻናላችንን ይቀላቀሉ \(Subscribe\))$'
 
 # Load environment variables
 from pathlib import Path
@@ -694,7 +695,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [get_text(lang, 'admin_button'), get_text(lang, 'register')],
         [get_text(lang, 'menu_button')],
         [get_text(lang, 'contact_support'), get_text(lang, 'about_help')],
-        [get_text(lang, 'language')]
+        [get_text(lang, 'subscribe_button'), get_text(lang, 'language')]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
@@ -704,6 +705,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif update.callback_query:
          # When returning from a conversation or other flow
         await update.callback_query.message.reply_text(welcome_msg, reply_markup=reply_markup)
+
+
+async def subscribe_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends the subscribe message with social media links."""
+    lang = get_user_lang(update, context) or 'en'
+    
+    keyboard = [
+        [InlineKeyboardButton("🎵 TikTok", url="https://www.tiktok.com/@ethoneytradingoffical")],
+        [InlineKeyboardButton("✈️ Telegram", url="https://t.me/ethoneytrading")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    text = get_text(lang, 'subscribe_message')
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup)
 
 async def check_registration_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -3259,6 +3279,7 @@ def main():
     application.add_handler(MessageHandler(filters.Regex(ADMIN_USER_MANAGEMENT_PATTERN), admin_user_management_menu))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_REPORTS_LOGS_PATTERN), admin_reports_logs))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_EXPORT_USERS_PATTERN), admin_export_users))
+    application.add_handler(MessageHandler(filters.Regex(SUBSCRIBE_PATTERN), subscribe_channels))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_EXPORT_ORDERS_PATTERN), admin_export_orders))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_LIST_PRODUCTS_PATTERN), admin_list_products))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_LIST_USERS_PATTERN), admin_list_users_manage))
