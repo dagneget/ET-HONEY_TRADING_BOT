@@ -1,6 +1,9 @@
 import os
 import logging
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+from fastapi import FastAPI, Request, Response
+import uvicorn
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
@@ -12,6 +15,9 @@ from telegram.ext import (
     ConversationHandler,
     Application
 )
+
+# Global application instance for FastAPI
+application = None
 import database
 from languages import get_text
 import re
@@ -3023,14 +3029,7 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Fallback for unknown messages."""
     await update.message.reply_text("Sorry, I didn't understand that command or message. Type /start to see the menu.")
 
-def main():
-    token = os.getenv("BOT_TOKEN")
-    if not token or token == "your_bot_token_here":
-        print("Error: BOT_TOKEN is not set in .env file.")
-        return
-
-    application = ApplicationBuilder().token(token).post_init(post_init).build()
-    
+def setup_handlers(application):
     # Common Navigation Handlers for Fallbacks
     navigation_handlers = [
         CommandHandler('cancel', cancel),
@@ -3203,7 +3202,6 @@ def main():
     # Newly added admin handlers
     application.add_handler(CallbackQueryHandler(admin_manage_user, pattern='^admin_manage_user:\\d+$'))
     application.add_handler(CallbackQueryHandler(admin_user_action_handler, pattern='^admin_act_user:.+$'))
-    # application.add_handler(CallbackQueryHandler(admin_reply_to_ticket_callback, pattern='^admin_reply_to_ticket:\\d+$')) # Replaced by ConversationHandler
     application.add_handler(CallbackQueryHandler(admin_resolve_ticket_callback, pattern='^admin_resolve_ticket:\\d+$'))
     application.add_handler(CallbackQueryHandler(admin_process_order_callback, pattern='^admin:(approve|reject):orders:\\d+$'))
     
@@ -3267,7 +3265,6 @@ def main():
     application.add_handler(MessageHandler(filters.Regex(BACK_PATTERN), back_to_home))
     application.add_handler(MessageHandler(filters.Regex(COMPLAINT_PATTERN), start_support))
     application.add_handler(MessageHandler(filters.Regex(INQUIRY_PATTERN), start_support))
-    # application.add_handler(MessageHandler(filters.Regex(LANGUAGE_PATTERN), choose_language)) # Handled below
 
     application.add_handler(MessageHandler(filters.Regex(LANGUAGE_PATTERN), choose_language))
     application.add_handler(MessageHandler(filters.Regex(ADMIN_DASHBOARD_PATTERN), admin_dashboard_text_handler))
@@ -3289,9 +3286,9 @@ def main():
     application.add_handler(MessageHandler(filters.Regex(ADMIN_BACK_PATTERN), admin_button_handler))
 
     application.add_handler(CallbackQueryHandler(promote_admin_callback, pattern='^promote_admin:\\d+$'))
-
     application.add_handler(CallbackQueryHandler(admin_action_handler, pattern='^admin:'))
-    # Add    # Delete Account Conversation
+    
+    # Delete Account Conversation
     delete_account_handler = ConversationHandler(
         entry_points=[
             CommandHandler('deleteaccount', start_delete_account),
@@ -3304,23 +3301,53 @@ def main():
     )
     application.add_handler(delete_account_handler)
     
-    # Language and other global callbacks
     application.add_handler(CallbackQueryHandler(set_language, pattern='^lang_'))
     application.add_handler(CallbackQueryHandler(order_later_callback, pattern='^order_later$'))
-
-    application.add_handler(CallbackQueryHandler(button_handler)) # For other menu buttons
-
-    # Admin Reply Handler (Must be before general fallback)
-    # Using filters.REPLY to catch replies
-
-    # Using filters.REPLY to catch replies
+    application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.REPLY, admin_reply_handler))
-    
-    # General User Message Handler (for continuing open tickets or fallback)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_reply_handler))
 
-    print("Bot is running...")
-    application.run_polling()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global application
+    token = os.getenv("BOT_TOKEN")
+    webhook_url = os.getenv("WEBHOOK_URL")
+    
+    if not token:
+        logging.error("BOT_TOKEN is not set in environment variables")
+        yield
+        return
+
+    application = ApplicationBuilder().token(token).post_init(post_init).build()
+    setup_handlers(application)
+    
+    if webhook_url:
+        await application.bot.set_webhook(url=f"{webhook_url}/webhook")
+        logging.info(f"Webhook set to {webhook_url}/webhook")
+    else:
+        logging.warning("WEBHOOK_URL not set in environment variables. Webhook not configured.")
+    
+    async with application:
+        await application.start()
+        yield
+        await application.stop()
+
+app = FastAPI(lifespan=lifespan)
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    """Entry point for Telegram webhooks."""
+    if application is None:
+        return Response(content="Application not initialized", status_code=503)
+    update = Update.de_json(await request.json(), application.bot)
+    await application.process_update(update)
+    return Response(status_code=200)
+
+@app.get("/")
+async def index():
+    """Health check endpoint."""
+    return {"status": "ok", "bot": "ET HONEY Trading Bot"}
 
 if __name__ == '__main__':
-    main()
+    port = int(os.getenv("PORT", 10000))
+    uvicorn.run("bot:app", host="0.0.0.0", port=port, reload=False)
