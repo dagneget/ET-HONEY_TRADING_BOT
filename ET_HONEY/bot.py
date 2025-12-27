@@ -18,8 +18,8 @@ from telegram.ext import (
 
 # Global application instance for FastAPI
 application = None
-import database
-from languages import get_text
+from . import database
+from .languages import get_text
 import re
 import uuid
 import io
