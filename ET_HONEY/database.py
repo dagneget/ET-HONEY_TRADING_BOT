@@ -5,7 +5,8 @@ import os
 import logging
 
 DB_NAME = "honey_trading.db"
-DB_PATH = os.path.join(os.path.dirname(__file__), DB_NAME)
+# Use environment variable for database path if provided (useful for persistent disks on Render)
+DB_PATH = os.getenv("DATABASE_PATH", os.path.join(os.path.dirname(__file__), DB_NAME))
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
